@@ -1,0 +1,45 @@
+# Kampus inkişaf vəziyyəti
+
+Məqsəd React Native Android tətbiqi, Next.js admin və kassa, ortaq Spring Boot API və ayrıca xarici partnyor simulyatorudur. Mərhələlərin sayı sabit deyil; işlər asılılığa və demo üçün vacibliyinə görə birləşdirilir və ya bölünür. Təqdimat istifadəçinin istəyi ilə sonraya saxlanılır.
+
+Bu sənəd bütün TT-nin tamamlandığını bildirmir. “İşləyir” lokal sandbox daxilində yoxlanmış axın deməkdir; real bank, dövlət reyestri, SİMA, kreditor və blokçeyn bağlantısı yoxdur.
+
+## İşləyən lokal demo
+
+- Ledger: ikili yazılış, balans, HOLD/CAPTURE/release, sorğu idempotency-si və qoruma hesabı ilə daxili üzləşdirmə.
+- Giriş: Argon2 PIN, cihaz identifikatoruna bağlı sessiya, vaxt limiti və üç səhv cəhddən sonra bloklama.
+- Balans: mock kart və açıq bankçılıq, 15 dəqiqəlik birdəfəlik terminal kodu.
+- Köçürmə: daxili P2P və AniPay mock-u, 5 saniyəlik ləğv, pul istə, bərabər/fərdi hesab bölmə.
+- Etibarlı alıcılar: PIN təsdiqi ilə əlavə etmə. Kontakt uyğunlaşdırması cihazda SHA-256 hesablayır; boş sorğu istifadəçiləri sıralamır.
+- QR/kassa: EMV TLV və CRC16, statik/dinamik QR, müddət və birdəfəlik istifadə, komissiya və geri qaytarma.
+- Karta köçürmə: ayrıca mock forma, Luhn və demo BIN, tokenləşdirmə, yadda saxlanan alıcı kartları, komissiya, rezerv, şəbəkə təsdiqi/rəddi və gecikmiş cavabın izlənməsi. Kartın sahibinin real yoxlanması yoxdur; öz kartına pulsuz çıxarış da demo seçiminə əsaslanır.
+- Virtual kartlar: üç kart növü, satıcı kilidi, limit/dondurma, mock avtorizasiya, kart məlumatlarının PIN ilə qısa müddətə göstərilməsi və mübahisə. Tam PAN/CVV API-nin təkrar sorğu keşinə yazılmır. Əlavə avtorizasiya icazəsi PIN, satıcı və konkret məbləğə bağlıdır.
+- Fraud: seçilmiş qaydalar, rezervli admin növbəsi və rədd zamanı rezervin açılması. Qara siyahıdakı alıcıya göndəriş bloklanır.
+- Kredit: QR üçün 50 AZN Sonra ödə, öz kapitalından maliyyələşmə, portfelin 10% həddi. 60 gündən çox gecikmiş və son 12 ayda silinmiş borcun kapitala nisbəti həqiqi qeydlərdən hesablanır; TT üzrə hədd 1%-dir.
+- Partnyor kreditləri: razılıq, tarixçədən hesablanan aktiv aylar və son 90 günlük orta daxilolma, iki mock kreditor, aylıq/cəmi/FİFD, demo qəbul, balansa köçürmə və qrafik üzrə avtomatik/əl ilə ödəniş. Gecikmiş borc scoring-də nəzərə alınır.
+- USDT pilotu: default OFF flag, mock VASP portfeli, 30 saniyə quote, al/sat və QR ödənişi; mock depozit, ünvan üzrə sadə AML ssenarisi və Travel Rule ilə çıxarış.
+- Büdcə/analitika: kateqoriya üzrə aylıq xərclər, büdcə və hədd bildirişləri, kateqoriyanın dəyişdirilməsi.
+- Admin: monitorinq, fraud/mübahisə, kart köçürmələri, demo KYC reyestri, kripto AML qeydləri, audit, kapital, feature flag və CSV.
+
+## Tamamlanmış kimi təqdim edilməməli hissələr
+
+- Qeydiyyatda canlılıq və üz uyğunluğu simulyasiya olunur. Checkbox kamera analizi deyil. ML Kit inteqrasiyası və şifrəli foto/video saxlanması yoxdur. KYC qeydləri DEMO_VERIFIED / DEMO_SIMULATED kimi işarələnir; Mock SİMA hüquqi elektron imza deyil.
+- Bitcoin mədaxil ekranı dizayn prototipidir. Oradakı ünvan/invoice nümunədir; Bitcoin adı ilə AZN balans artırılması bağlanıb. İşləyən kripto axını USDT pilotudur.
+- Rüblük TRA fraud əmsalı hesablanmır və TRA istisnası aktiv deyil. Statik rəqəm real ölçmə kimi göstərilmir.
+- Sonra ödə üçün 14 günlük hesab, KYC/18+, son 30 gündə iki daxilolma və gecikməsiz borc yoxlamaları işləyir. Ödəniş tarixində mövcud və rezervsiz balansdan avtomatik qaytarılır; vəsait çatmayanda OVERDUE, 60 gündən çox gecikəndə BAD olur.
+- Scoring artıq əməliyyat tarixçəsindən hesablanır; kreditor qərarları xarici simulatorun demo qaydalarıdır.
+- VASP depozitləri real şəbəkə təsdiqlərini gözləmir; AML real sanksiya xidməti deyil. Provider sorğularında sabit operationId və davamlı cavab keşi retry zamanı təkrar depozit/çıxarışı saxlayır. Ayrı açarla gələn qeyri-müəyyən əməliyyatların tam saga/kompensasiya sistemi yoxdur.
+- Kartın aylıq xərci yeni UTC təqvim ayında sıfırlanır. Tam clearing/chargeback və təhlükəsiz hosted reveal axını ayrıca real inteqrasiyadır.
+- Bankla üzləşdirmə hazırda daxili ledger hesablarını müqayisə edir; müstəqil bank çıxarışı ilə tam yoxlama deyil.
+- Yenilənmə polling ilədir; push/SMS, transactional outbox və WebSocket/STOMP yoxdur.
+- Deploy PostgreSQL/Flyway istifadə edir; lokal inkişaf üçün H2 dəstəyi saxlanılıb. Bəzi domenlər JSON records-dadır, yazılar DB kilidi ilə ardıcıllaşır. Redis, hesab üzrə ayrıca kilid və 24 saatlıq idempotency təmizlənməsi böyümə üçün ayrıca işdir.
+- Aparat açarı ilə cihaz bağlama, JWT/refresh rotasiyası, fiziki telefonda biometrika/kamera və iki telefonlu demo yoxlanmayıb.
+- Docker/Compose, Caddy HTTPS konfiqurasiyası, ayrıca təsadüfi deploy credential-ları, healthcheck, backup/bərpa, source paketi və release imzalı APK hazırlanıb. Server/domenə faktiki yayımlama istifadəçinin ayrıca göstərişini gözləyir. Video və təqdimat sonraya saxlanıb.
+
+## Növbəti iş sırası
+
+Hazırkı hədəf deploy oluna bilən demo paketidir. Növbəti istifadəçi addımı server/domen seçimi və yayımlama göstərişidir. Fiziki cihaz yoxlaması və demo məşqi həmin mühitdə aparılır. Real ML Kit/SİMA/bank/VASP, push və yüksək yüklənmə arxitekturası ayrıca genişləndirmədir.
+
+## Məlumat və təhlükəsizlik
+
+Pul integer qəpiklə, USDT integer mikro vahidlə saxlanır. Deploy profili lokal standart credential-larla başlamağı rədd edir. Demo bank əməliyyatları real pul xidməti kimi istifadə edilmir. Lokal HTTP yalnız sandbox üçündür. Tam TT qəbul meyarları ayrıca yoxlanmalıdır.

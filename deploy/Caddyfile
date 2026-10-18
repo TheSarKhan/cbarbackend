@@ -1,0 +1,41 @@
+{$APP_ADDRESS} {
+ encode zstd gzip
+ header {
+  X-Content-Type-Options nosniff
+  Referrer-Policy no-referrer
+  X-Frame-Options DENY
+  Permissions-Policy "camera=(self), microphone=(), geolocation=()"
+ }
+ request_body {
+  max_size 128KB
+ }
+ handle /api/* {
+  header Cache-Control "no-store"
+  reverse_proxy api:8080
+ }
+ handle /card-form/* {
+  header Cache-Control "no-store"
+  reverse_proxy sim:8081
+ }
+ handle {
+  reverse_proxy mobile:8082
+ }
+}
+{$ADMIN_ADDRESS} {
+ encode zstd gzip
+ header {
+  X-Content-Type-Options nosniff
+  Referrer-Policy no-referrer
+  X-Frame-Options DENY
+ }
+ request_body {
+  max_size 128KB
+ }
+ handle /api/* {
+  header Cache-Control "no-store"
+  reverse_proxy api:8080
+ }
+ handle {
+  reverse_proxy admin:3000
+ }
+}

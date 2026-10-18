@@ -1,0 +1,15 @@
+# Disposable isolated PostgreSQL integration stack. Never use for hosted service.
+services:
+ api:
+  image: kampus-api:latest
+  environment:
+   DEPLOYED: 'false'
+   DEMO_PIN: '123456'
+   ADMIN_PIN: '123456'
+   SIM_KEY: kampus-local-simulator-key
+  ports: ['127.0.0.1:18090:8080']
+ sim:
+  image: kampus-sim:latest
+  environment:
+   SIM_KEY: kampus-local-simulator-key
+  ports: ['127.0.0.1:18091:8081']

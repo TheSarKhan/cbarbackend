@@ -1,0 +1,1915 @@
+Kampus — Texniki Tapşırıq
+Oct 16, 2026 · @Babayev Serxan
+0. Sənəd haqqında
+Bu sənəd Kampus tələbə cüzdanının MVP-sini 7 gündə qurmaq üçün yeganə mənbədir. Backend, mobil və admin komandası, həmçinin Claude Code eyni sənəddən işləyir.
+Oxucular: backend (Spring Boot), mobil (React Native), admin (Next.js) developerləri və Claude Code.
+Konvensiyalar
+Mətn Azərbaycan dilindədir; API, DB, kod və identifikatorlar ingilis dilindədir.
+[REAL]: tam işləyən funksiya, real məntiq və real data axını ilə.
+[MOCK]: xarici sistemin simulyasiyası; interfeysi real sistemlə eynidir, sonradan əvəz edilə bilər.
+Mütləq: demo üçün vacibdir. Arzuolunan: vaxt qalarsa.
+Hüquqi istinadlar Mərkəzi Bankın qaydalarına edilir (bölmə 10).
+Terminlər lüğəti
+Termin
+Mənası
+E-pul
+İstifadəçinin verdiyi məbləğ qədər buraxılan elektron pul; Kampus balansı
+Ledger
+Bütün pul hərəkətlərinin ikili yazılışla (double-entry) qeydi
+GMA
+Gücləndirilmiş müştəri autentifikasiyası: ən azı 2 element (bilik, sahiblik, biometrika)
+Etibar edilən şəxs
+GMA-sız köçürmə edilə bilən alan; siyahıya əlavə GMA tələb edir
+TRA
+Real vaxt risk analizi; aşağı riskli əməliyyatı GMA-dan azad edir
+AÖS / AniPay
+Mərkəzi Bankın Ani Ödənişlər Sistemi; telefon və ya FİN ilə 24/7 köçürmə
+EMV QR
+QR ödənişlərinin beynəlxalq standartı (TLV formatı)
+PAN
+Kartın tam nömrəsi; Kampus onu heç vaxt saxlamır
+Token
+PAN-ı əvəz edən təhlükəsiz identifikator (tok_...)
+BIN
+Kart nömrəsinin ilk 6 rəqəmi; emitent bankı göstərir
+OCT
+Original Credit Transaction: karta pul göndərmə əməliyyatı
+HOLD / CAPTURE
+Məbləğin əvvəl dondurulması, sonra faktiki tutulması
+Idempotency key
+Eyni sorğunun iki dəfə icrasının qarşısını alan unikal açar
+BOKT
+Bank olmayan kredit təşkilatı
+VASP
+Virtual aktiv xidməti təminatçısı (kripto partnyoru)
+Quote
+Valyuta/kripto məzənnəsinin 30 saniyəlik kilidlənmiş təklifi
+Liveness
+Kamerada canlı insan olduğunun yoxlanılması
+SİMA İmza
+Gücləndirilmiş elektron imza; müqavilə imzalanması üçün
+Feature flag
+Funksiyanı kod dəyişmədən açıb-bağlayan parametr
+1. Məhsul icmalı
+Kampus tələbələr üçün rəqəmsal cüzdandır: ödəniş, köçürmə, virtual kart və mikrokredit bir tətbiqdə. Əsas fərq: gündəlik ödəniş sadədir, təhlükəsizlik yalnız risk olanda işə düşür.
+Problem
+Tələbələrin çoxunun rəsmi gəliri və öz bank kartı yoxdur; banklar onları kredit üçün rədd edir.
+Yadda saxlanmış kartla abunəlik fırıldaqları real itkiyə səbəb olur (komanda üzvünün 400 AZN itkisi).
+Dostlar arasında hesab bölmək, pul istəmək nağd pul və ya kart nömrəsi ilə edilir.
+Hədəf auditoriya
+Əsas: 18+ yaşlı universitet tələbələri.
+Sonra (roadmap): 16–17 yaşlılar, valideyn razılığı ilə Teen hesab.
+İkinci tərəf: kampus ətrafındakı kafe, mağaza, kitab satıcıları (QR ilə ödəniş qəbulu).
+Dəyər təklifi
+2 dəqiqəyə məsafədən hesab və virtual kart, bank filialına getmədən.
+Satıcıya kilidli və limitli virtual kartlar: abunəlik fırıldağı keçmir.
+Telefon nömrəsi ilə P2P, hesabı bölmə, pul istəmə.
+50 AZN-dək "Sonra ödə" və partnyor kreditorlardan təkliflər.
+Tələbə üçün pulsuz; gəlir satıcılardan və partnyorlardan gəlir.
+m10-dan fərq: m10 hamı üçün cüzdandır; Kampus tələbənin maliyyə həyatı üçün qurulub və onu fırıldaqdan qoruyur.
+Hüquqi model
+Rol
+Kim
+Nə edir
+E-pul təşkilatı
+Kampus
+Hesab, e-pul, P2P, QR, "Sonra ödə" (≤50 AZN)
+Partnyor bank
+BIN sponsor
+Virtual kart, AniPay çıxışı, müştəri vəsaitlərinin saxlanması
+Kredit partnyorları
+BOKT, bank
+50 AZN-dən böyük kreditlər; müqavilə onlarla bağlanır
+VASP partnyoru
+Lisenziyalı VASP
+Kripto saxlama və konvertasiya; qanun qəbul olunandan sonra
+Tənzimləyici
+Mərkəzi Bank
+Lisenziya, nəzarət, hesabatlar
+Əhatə dairəsi (MVP)
+Modul
+Status
+Qeydiyyat və eKYC
+[REAL] liveness, [MOCK] dövlət bazası və SİMA
+Autentifikasiya və GMA
+[REAL]
+Balans və top-up
+[REAL] ledger, [MOCK] kart/terminal/açıq bankçılıq mənbəyi
+QR ödəniş
+[REAL]
+P2P köçürmə
+[REAL] daxili, [MOCK] AniPay
+Kart nömrəsinə köçürmə
+[REAL] məntiq, [MOCK] kart şəbəkəsi
+Virtual kartlar
+[REAL] məntiq, [MOCK] avtorizasiya axını
+Fraud engine
+[REAL]
+Kredit
+[REAL] "Sonra ödə", [MOCK] partnyor qərarları
+Kripto
+[REAL] məntiq, [MOCK] VASP; feature flag ilə
+Bildirişlər
+[REAL]
+Analitika
+[REAL] sadə kateqoriyalar
+Admin panel
+[REAL]
+Əhatədən kənar: Teen hesab, Apple/Google Pay, plastik kart, USD hesab, real bank və dövlət sistemi inteqrasiyaları.
+2. Arxitektura
+Kampus bir Spring Boot monolitidir, daxildə aydın sərhədli modullara bölünür. Xarici sistemlər (bank, AniPay, kart şəbəkəsi, VASP, BOKT, dövlət reyestri, SİMA) ayrıca kampus-sim servisində simulyasiya olunur. Beləliklə real inteqrasiya sərhədi kodda görünür və mock sonradan real API ilə əvəz edilə bilər.
+Komponentlər
+Komponent
+Texnologiya
+Qeyd
+kampus-api
+Java 21, Spring Boot 3, Spring Security, Spring Data JPA, Flyway
+Əsas backend, modul monolit
+kampus-sim
+Spring Boot 3 (yüngül)
+Xarici sistemlərin mockları, ayrıca konteyner
+kampus-mobile
+React Native (Expo), TypeScript, React Navigation
+iOS + Android
+kampus-admin
+Next.js (App Router), TypeScript, Tailwind, shadcn/ui, Recharts
+Admin, kassa, compliance
+Verilənlər bazası
+PostgreSQL 16
+Ledger, bütün domen cədvəlləri, outbox
+Cache
+Redis 7
+Quote kilidi (TTL), rate limit, velocity sayğacları, sessiyalar
+Real vaxt
+WebSocket (STOMP)
+Admin monitorinq, kassa ekranı, bildirişlər
+Mobil kitabxanalar
+react-native-vision-camera: QR skan və liveness üçün kamera.
+Google ML Kit üz aşkarlanması: baş bucağı, göz açıqlığı, təbəssüm ehtimalı (real liveness).
+expo-local-authentication: Face ID / barmaq izi.
+expo-secure-store: refresh token və cihaz açarı.
+expo-notifications: push bildirişlər.
+Backend modulları
+Hər modul ayrıca Java paketidir (az.kampus.<modul>), öz cədvəllərinə sahibdir və digər modullarla yalnız public servis interfeysləri və domen hadisələri vasitəsilə danışır.
+Modul
+Məsuliyyət
+identity
+Qeydiyyat, eKYC, yaş, razılıqlar
+auth
+Login, JWT, cihaz bağlama, GMA qərarı
+ledger
+Hesablar, jurnal yazılışları, balanslar, HOLD, üzləşdirmə
+wallet
+Top-up, balans görüntüsü
+payments
+EMV QR, satıcılar, kassa
+transfers
+P2P, AniPay, kart nömrəsinə köçürmə, split bill, pul istə
+cards
+Virtual kartlar, nəzarətlər, avtorizasiya, abunəliklər
+fraud
+Qaydalar, risk skoru, fraud növbəsi, fraud dərəcəsi
+credit
+"Sonra ödə", marketplace, ödəniş qrafiki
+crypto
+Mock VASP inteqrasiyası, quote, AML skrininq
+notifications
+Push, in-app, outbox emalı
+admin
+Monitorinq, compliance, feature flag-lar
+Modullararası əlaqə
+Sinxron: Spring bean interfeysləri (məsələn, LedgerService.post(...)).
+Asinxron: domen hadisələri + transactional outbox (outbox_events cədvəli). Hadisə biznes tranzaksiyası ilə eyni DB tranzaksiyasında yazılır, ayrıca worker onu emal edir. Kafka istifadə olunmur.
+API konvensiyaları
+REST, /api/v1/..., JSON.
+Pul məbləğləri qəpiklə tam ədəd (amountMinor: 1500 = 15.00 AZN) + currency: "AZN". Heç vaxt float.
+Pul hərəkəti yaradan hər POST sorğusu Idempotency-Key başlığı tələb edir.
+Xətalar RFC 7807 formatında (application/problem+json): type, title, status, detail, code.
+Vaxt ISO 8601, UTC.
+Mobil: Authorization: Bearer <access> + X-Device-Id.
+Admin: ayrıca rol (ADMIN, COMPLIANCE, MERCHANT).
+Deploy
+Bir cloud VM (4 vCPU, 8 GB RAM), Docker Compose: kampus-api, kampus-sim, postgres, redis, kampus-admin, caddy (HTTPS).
+Mobil: Expo development build, demo telefonlarında quraşdırılmış.
+Ehtiyat plan: eyni Compose faylı laptopda lokal işləyir; demo videosu əvvəlcədən yazılır.
+Aşağıdakı diaqram komponentlərin əlaqəsini göstərir.
+
+Kampus arxitekturası · 4 komponent, 12 modul, 6 mock
+Mobil və admin yalnız kampus-api ilə danışır. Bütün xarici sistemlər kampus-sim arxasındadır və real API ilə əvəz edilə bilər; ledger bütün pul hərəkətlərinin yeganə yoludur.
+3. Qeyri-funksional tələblər
+Təhlükəsizlik tələbləri Mərkəzi Bankın GMA Qaydasına uyğun qurulur və demoda göstərilir. Digər tələblər demonun stabil və inandırıcı olması üçündür.
+Təhlükəsizlik və GMA
+Tələb
+Dəyər
+Əsas
+GMA elementləri
+Ən azı 2: cihaz (sahiblik) + Face ID/PIN (biometrika/bilik)
+GMA 2.1
+Ardıcıl uğursuz cəhd
+Maks. 3, sonra bloklama + istifadəçiyə bildiriş
+GMA 2.2.3
+Aktivsiz sessiya (mobil)
+Maks. 5 dəqiqə, sonra yenidən Face ID
+GMA 2.2.5
+Aktivsiz sessiya (admin web)
+Maks. 30 dəqiqə
+GMA 2.2.5
+Dinamik bağlama
+Təsdiq imzası məbləğ + alan + nonce üzərindən
+GMA 2.3
+PIN
+Ekranda gizli, serverdə Argon2 hash
+GMA 2.2.2
+Kart nömrəsi (PAN)
+Kampus DB-yə yazılmır; yalnız token + son 4 rəqəm
+PCI DSS prinsipi
+Nəqliyyat
+Yalnız HTTPS (TLS 1.2+)
+GMA 2.2.4
+Cihaz bağlama: qeydiyyatda mobil cihaz açar cütü yaradır (secure store), açıq açar serverə yazılır. Hər həssas əməliyyat bu açarla imzalanır: sign(txId + amount + payee + nonce). Bu, sahiblik elementidir və dinamik bağlamanı təmin edir.
+GMA istisnaları (risk əsaslı autentifikasiya)
+Fraud modulu hər əməliyyat üçün REQUIRE_SCA və ya EXEMPT qərarı verir:
+Kiçik məbləğ (GMA 3.9): ≤60 AZN, son GMA-dan sonra ardıcıl ≤5 əməliyyat və cəmi ≤300 AZN → istisna.
+Etibar edilən şəxs (GMA 3.6, 3.7): alan siyahıdadırsa → istisna; siyahıya əlavə etmək GMA tələb edir.
+Öz hesabları arasında (GMA 3.8): istisna.
+TRA (GMA 3.10, 4.2): fraud dərəcəsi həddən aşağıdırsa və risk siqnalı yoxdursa → istisna.
+Digər hallar: GMA tələb olunur.
+İstisna olduqda belə qeydiyyatlı cihazda tətbiqin açıq sessiyası tələb olunur (GMA 3.13).
+Etibarlılıq və data bütövlüyü
+Idempotency: Idempotency-Key + (user_id, key) unikal indeksi; təkrar sorğu ilk cavabı qaytarır (24 saat saxlanılır).
+Race condition: balans dəyişən əməliyyatlarda hesablar SELECT ... FOR UPDATE ilə, həmişə account_id artan sırası ilə kilidlənir (deadlock qarşısı).
+Outbox: heç bir hadisə itmir; worker hər 500 ms-də emal edir, uğursuzluqda eksponensial təkrar cəhd.
+Saga: çoxaddımlı axınlarda (kart köçürməsi, kripto ödəniş) hər addımın kompensasiyası var.
+Audit və loqlar
+Hər pul hərəkəti, GMA qərarı, admin əməliyyatı və feature flag dəyişikliyi audit_log cədvəlinə yazılır (kim, nə, nə vaxt, IP, cihaz).
+Audit qeydləri dəyişdirilmir və silinmir (yalnız INSERT).
+Strukturlaşdırılmış JSON loqlar, hər sorğuda traceId.
+Performans (demo hədəfləri)
+Ödəniş və köçürmə API-ləri: p95 < 300 ms (mock gecikmələri xaric).
+Kart avtorizasiyası (mock): < 150 ms qərar.
+Admin monitorinq: hadisədən ekrana < 1 saniyə (WebSocket).
+Fərdi məlumatlar
+Hər data paylaşımı üçün ayrıca razılıq qeydi (consents cədvəli: növ, versiya, tarix); kredit partnyoruna data yalnız razılıqla gedir.
+eKYC şəkil və videoları ayrıca, şifrələnmiş saxlanılır (demo: lokal disk, AES-256).
+4. Ledger və domen modeli
+Bütün pul hərəkətləri yalnız ledger modulu vasitəsilə, ikili yazılışla qeyd olunur. Heç bir modul balansı birbaşa dəyişmir. Hər jurnal yazılışında debet və kredit cəmi bərabərdir.
+Hesab növləri
+Növ (account_type)
+Sahibi
+Mənası
+Normal tərəf
+USER_WALLET
+Hər istifadəçi
+İstifadəçinin e-pul balansı (Kampusun öhdəliyi)
+Kredit
+MERCHANT_WALLET
+Hər satıcı
+Satıcının yığılan vəsaiti
+Kredit
+CUSTOMER_FUNDS_BANK
+Kampus
+Partnyor bankdakı müştəri vəsaitləri hesabı
+Debet
+OWN_FUNDS_BANK
+Kampus
+Şirkətin öz vəsaiti
+Debet
+FEE_INCOME
+Kampus
+Komissiya gəliri
+Kredit
+CREDIT_RECEIVABLE
+Kampus
+"Sonra ödə" üzrə istifadəçi borcları
+Debet
+CARD_SETTLEMENT
+Kampus
+Kart şəbəkəsi ilə hesablaşma (klirinq)
+Debet
+ANIPAY_SETTLEMENT
+Kampus
+AniPay ilə hesablaşma (klirinq)
+Debet
+VASP_SETTLEMENT
+Kampus
+Kripto partnyoru ilə manat hesablaşması
+Debet
+Kripto balansları Kampus ledger-ində deyil, kampus-sim daxilindəki mock VASP-dadır. Ledger yalnız manat tərəfini yazır.
+Əlavə hesab növü: LENDER_SETTLEMENT (Kampus, normal tərəf Debet), partnyor kreditorlara aylıq ödənişlərin hesablaşması (5.9).
+Yazılış nümunələri
+Əməliyyat
+Debet
+Kredit
+Məbləğ
+Kartla top-up 20 AZN
+CUSTOMER_FUNDS_BANK
+USER_WALLET(A)
+2000
+P2P A → B, 10 AZN
+USER_WALLET(A)
+USER_WALLET(B)
+1000
+QR ödəniş, kafe 15 AZN
+USER_WALLET(A)
+MERCHANT_WALLET(M)
+1500
+Satıcı komissiyası 0.5%
+MERCHANT_WALLET(M)
+FEE_INCOME
+8
+Komissiyanın öz hesaba köçürülməsi
+OWN_FUNDS_BANK
+CUSTOMER_FUNDS_BANK
+8
+Kart nömrəsinə köçürmə 20 AZN (capture)
+USER_WALLET(A)
+CARD_SETTLEMENT
+2000
+"Sonra ödə" 12 AZN, kafedə
+CREDIT_RECEIVABLE
+MERCHANT_WALLET(M)
+1200
+Kreditin öz vəsaitdən maliyyələşməsi
+CUSTOMER_FUNDS_BANK
+OWN_FUNDS_BANK
+1200
+"Sonra ödə" qaytarılması
+USER_WALLET(A)
+CREDIT_RECEIVABLE
+1200
+Öz vəsaitin geri qayıtması
+OWN_FUNDS_BANK
+CUSTOMER_FUNDS_BANK
+1200
+Komissiyanın köçürülməsi Qayda 7.6-ya (5 iş günü ərzində), kreditin öz vəsaitdən verilməsi Qayda 9.2-yə uyğundur.
+Balans və HOLD
+ledger_balance: bütün yazılışların cəmi.
+held_amount: aktiv HOLD-ların cəmi (kart köçürməsi, kart avtorizasiyası, kripto ödənişi gözləyərkən).
+available_balance = ledger_balance − held_amount. İstifadəçiyə bu göstərilir və xərc limiti də buna görə yoxlanılır.
+HOLD statusları: ACTIVE → CAPTURED | RELEASED | EXPIRED (default müddət 15 dəqiqə).
+İnvariantlar
+Hər journal_entry üçün: cəmi debet = cəmi kredit.
+Qoruma invariantı: CUSTOMER_FUNDS_BANK balansı = bütün USER_WALLET + MERCHANT_WALLET balanslarının cəmi.
+Heç bir USER_WALLET mənfiyə düşə bilməz ("Sonra ödə" ayrıca CREDIT_RECEIVABLE hesabından keçir).
+Yazılışlar dəyişdirilmir; səhv yalnız əks yazılışla (reversal) düzəldilir.
+Gündəlik üzləşdirmə (Qayda 7.4–7.5)
+Hər gün 00:05-də (demoda düymə ilə) ReconciliationJob işə düşür:
+kampus-sim-dən partnyor bankın mock çıxarışını alır.
+Çıxarışdakı qalığı CUSTOMER_FUNDS_BANK ledger balansı ilə müqayisə edir.
+Qoruma invariantını yoxlayır.
+Nəticəni reconciliation_runs cədvəlinə yazır: MATCHED və ya MISMATCH + fərq.
+Admin paneldə göstərilir: "Ledger ↔ bank: uyğundur".
+Əsas cədvəllər
+create table ledger_accounts (  id            uuid primary key,  account_type  varchar(32) not null,  owner_type    varchar(16),          -- USER | MERCHANT | SYSTEM  owner_id      uuid,  currency      char(3) not null default 'AZN',  status        varchar(16) not null default 'ACTIVE',  created_at    timestamptz not null default now());create table journal_entries (  id              uuid primary key,  business_type   varchar(32) not null, -- TOPUP, P2P, QR_PAYMENT, CARD_TRANSFER, BNPL ...  business_ref    uuid not null,        -- əlaqəli biznes əməliyyatının id-si  idempotency_key varchar(64),  description     text,  created_at      timestamptz not null default now(),  unique (business_type, business_ref));create table postings (  id           bigserial primary key,  entry_id     uuid not null references journal_entries(id),  account_id   uuid not null references ledger_accounts(id),  direction    char(1) not null check (direction in ('D','C')),  amount_minor bigint not null check (amount_minor > 0),  currency     char(3) not null);create table account_balances (  account_id     uuid primary key references ledger_accounts(id),  ledger_balance bigint not null default 0,  held_amount    bigint not null default 0,  version        bigint not null default 0,  updated_at     timestamptz not null default now());create table holds (  id           uuid primary key,  account_id   uuid not null references ledger_accounts(id),  amount_minor bigint not null check (amount_minor > 0),  reason       varchar(32) not null,  -- CARD_TRANSFER, CARD_AUTH, CRYPTO_PAY  business_ref uuid not null,  status       varchar(16) not null,  -- ACTIVE, CAPTURED, RELEASED, EXPIRED  expires_at   timestamptz not null,  created_at   timestamptz not null default now());create table reconciliation_runs (  id                 uuid primary key,  run_date           date not null,  bank_balance_minor bigint not null,  ledger_balance_minor bigint not null,  wallets_total_minor  bigint not null,  status             varchar(16) not null, -- MATCHED, MISMATCH  created_at         timestamptz not null default now());
+Ledger servis interfeysi
+public interface LedgerService {  JournalEntry post(PostingRequest request);          // atomik, invariantları yoxlayır  Hold placeHold(UUID accountId, long amountMinor, HoldReason reason, UUID businessRef);  JournalEntry captureHold(UUID holdId, List<PostingLine> lines);  void releaseHold(UUID holdId);  Balance getBalance(UUID accountId);                 // ledger, held, available}
+5. Modullar
+Hər modul eyni struktura malikdir: məqsəd, istifadəçi hekayələri, ekranlar, API, DB, biznes qaydaları və qəbul meyarları. Qəbul meyarları demoda yoxlanılan ssenarilərdir.
+5.1 Qeydiyyat və eKYC
+Yeni istifadəçi 2–3 dəqiqəyə filiala getmədən hesab açır. Axın Mərkəzi Bankın "Məsafədən hesabların açılması Qaydası"na (44/5) uyğundur: real liveness, dövlət bazası ilə üz tutuşdurması (mock) və SİMA İmza ilə müqavilə (mock).
+İstifadəçi hekayələri
+Tələbə kimi telefonumla, ŞV-mlə və selfie ilə hesab açmaq istəyirəm ki, banka getməyim.
+Kampus kimi 18 yaşdan kiçik şəxsin hesab açmasının qarşısını almaq istəyirəm.
+Compliance əməkdaşı kimi hər qeydiyyatın liveness nəticəsini və imzalanmış müqaviləni görmək istəyirəm.
+Axın
+Telefon + OTP: SMS kodu (mock; dev rejimində kod ekranda göstərilir).
+Razılıqlar: fərdi məlumatların emalı və xidmət şərtləri; hər biri versiya ilə consents-ə yazılır (44/5, 5.2).
+Şəxsiyyət: FİN + ŞV seriyası → mock dövlət reyestri ad, soyad, doğum tarixi və foto qaytarır. 18 yaşdan kiçikdirsə, axın dayanır.
+Liveness: 4 hərəkətdən 3-ü təsadüfi sıra ilə verilir; hər birinə 10 saniyə (44/5, 5.7).
+Üz tutuşdurması: liveness kadrı reyestr fotosu ilə müqayisə olunur (mock xidmət, hədd 0.80) (44/5, 5.8).
+Müqavilə: PDF yaradılır, istifadəçi SİMA İmza (mock) ilə imzalayır; Kampus da imzalayır (44/5, 6.3–6.4).
+Cihaz bağlama: açar cütü yaradılır, 6 rəqəmli PIN təyin edilir, Face ID aktivləşdirilir.
+Hesab: USER_WALLET yaradılır, istifadəçiyə yeni hesab limitləri göstərilir (44/5, 3.3).
+Rədd edildikdə səbəb SMS və in-app bildirişlə göndərilir (44/5, 6.6).
+Liveness hərəkətləri (mobil, ML Kit)
+Hərəkət
+Kod
+Aşkarlama şərti
+Başı sola çevir
+TURN_LEFT
+headEulerAngleY > 25°
+Başı sağa çevir
+TURN_RIGHT
+headEulerAngleY < −25°
+Göz qırp
+BLINK
+Hər iki göz < 0.2, sonra > 0.8 (1 saniyə ərzində)
+Gülümsə
+SMILE
+smilingProbability > 0.8
+Kadrda tam olaraq 1 üz olmalıdır; 2 və daha çox üz aşkarlanarsa, yoxlama dayandırılır (44/5, 5.5.4). Hər hərəkətin tamamlandığı anda bir kadr çəkilir və serverə göndərilir.
+Ekranlar
+Ekran
+Məzmun
+Xoş gəldin
+Kampus loqosu, "Hesab aç", "Daxil ol"
+Telefon / OTP
+Nömrə, 6 rəqəmli kod, yenidən göndər (60 san)
+Razılıqlar
+İki checkbox, sənədlərə linklər
+ŞV məlumatları
+FİN, seriya; reyestrdən gələn maskalanmış ad təsdiq üçün
+Liveness
+Kamera, üz çərçivəsi, cari tapşırıq, irəliləyiş (1/3, 2/3, 3/3)
+Müqavilə
+PDF önizləmə, "SİMA İmza ilə imzala"
+Mock SİMA
+Ayrı ekran: "Kampus MMC imza tələb edir", "Təsdiqlə"
+PIN və Face ID
+PIN iki dəfə, Face ID icazəsi
+Hazırdır
+Balans 0.00 AZN, "Virtual kart al", "Balansı artır"
+API
+Metod
+Yol
+Təsvir
+POST
+/api/v1/onboarding/start
+{phone} → OTP göndərilir, sessionId
+POST
+/api/v1/onboarding/{sessionId}/otp
+{code} → təsdiq
+POST
+/api/v1/onboarding/{sessionId}/consents
+{types[], versions[]}
+POST
+/api/v1/onboarding/{sessionId}/identity
+{fin, docSeries} → maskalanmış ad, yaş uyğunluğu
+POST
+/api/v1/onboarding/{sessionId}/liveness/challenge
+→ {challengeId, actions[3], expiresAt}
+POST
+/api/v1/onboarding/{sessionId}/liveness
+multipart: hər hərəkət üçün kadr + metadata → PASSED/FAILED
+POST
+/api/v1/onboarding/{sessionId}/contract
+→ {contractId, pdfUrl, signRequestId}
+GET
+/api/v1/onboarding/{sessionId}/contract/status
+SİMA imza statusu (polling, 2 san)
+POST
+/api/v1/onboarding/{sessionId}/device
+{publicKey, deviceInfo, pin}
+POST
+/api/v1/onboarding/{sessionId}/complete
+→ {userId, accessToken, refreshToken}
+DB
+users: id, phone, fin, first_name, last_name, birth_date, status (PENDING, ACTIVE, BLOCKED), kyc_level, created_at
+kyc_sessions: id, phone, step, status, registry_ref, liveness_status, face_match_score, contract_id, reject_reason, attempts, created_at
+kyc_artifacts: id, session_id, type (FRAME, CONTRACT_PDF, SIGNATURE), storage_path, sha256, created_at (fayllar şifrələnmiş)
+consents: id, user_id, type, version, granted_at, revoked_at
+devices: id, user_id, public_key, platform, model, bound_at, status
+Biznes qaydaları
+Yaş reyestrdəki doğum tarixinə görə hesablanır; < 18 → REJECTED_AGE.
+Liveness üçün gündə maks. 3 cəhd; sonra 24 saat bloklama.
+Üz tutuşdurma balı < 0.80 → REJECTED_FACE_MATCH.
+Yeni hesab limiti (ilk 30 gün): gündəlik xərc 500 AZN, balans 2 000 AZN; qeydiyyatda göstərilir.
+Eyni FİN ilə ikinci hesab açılmır; eyni telefonla ikinci aktiv hesab açılmır.
+Qəbul meyarları
+☐ 3 təsadüfi hərəkət hər cəhddə fərqli sıra ilə gəlir.
+☐ Kadrda iki üz olduqda liveness FAILED olur.
+☐ 17 yaşlı test FİN-i ilə qeydiyyat yaş səbəbi ilə rədd edilir.
+☐ Müqavilə SİMA mock ilə imzalanmadan hesab aktivləşmir.
+☐ Admin paneldə qeydiyyatın kadrları, balı və imzalanmış PDF görünür.
+5.2 Autentifikasiya və GMA
+Giriş və hər pul hərəkəti bir mərkəzi qərar xidmətindən keçir: ScaDecisionService. O, əməliyyatın GMA tələb edib-etmədiyini bölmə 3-dəki qaydalara görə müəyyən edir və qərarı audit-ə yazır.
+İstifadəçi hekayələri
+Tələbə kimi 15 AZN-lik kafe ödənişində yalnız tətbiqi açmaq və təsdiqləmək istəyirəm.
+Tələbə kimi böyük və ya yeni alana köçürmədə Face ID ilə təsdiq etmək istəyirəm.
+Tələbə kimi tez-tez pul göndərdiyim dostları "etibar edilən" siyahısına əlavə etmək istəyirəm.
+Giriş (challenge-response)
+Mobil GET /auth/challenge ilə nonce alır.
+İstifadəçi Face ID və ya PIN ilə cihaz açarını açır və nonce-u imzalayır.
+POST /auth/login → access token (JWT, 5 dəq) + refresh token (30 gün, cihaza bağlı).
+Tətbiq 5 dəqiqə aktivsiz qalarsa, kilid ekranı çıxır (GMA 2.2.5).
+Əməliyyatın təsdiqi
+Biznes modulu (məsələn, transfers) ScaDecisionService.decide(ctx) çağırır.
+Cavab EXEMPT(reason) olarsa, əməliyyat dərhal icra olunur.
+Cavab REQUIRE_SCA olarsa, əməliyyat PENDING_SCA statusunda saxlanılır və mobilə challenge qaytarılır: {txId, nonce, amount, payee}.
+Mobil təsdiq ekranında məbləği və alanı göstərir, Face ID tələb edir və sign(txId|amount|payee|nonce) imzasını göndərir.
+Server imzanı cihazın açıq açarı ilə yoxlayır → əməliyyat icra olunur. Challenge-in müddəti 2 dəqiqədir.
+Qərar konteksti
+record ScaContext(UUID userId, UUID deviceId, String operationType,                  long amountMinor, String payeeRef, boolean payeeTrusted,                  boolean ownAccounts, RiskSignals signals) {}sealed interface ScaDecision {  record Exempt(ExemptionReason reason) implements ScaDecision {}   // LOW_VALUE, TRUSTED, OWN_ACCOUNTS, TRA  record Require(String challengeId) implements ScaDecision {}}
+Kiçik məbləğ istisnası üçün sayğaclar Redis-dədir: sca:{userId}:count və sca:{userId}:sum. Hər uğurlu GMA-dan sonra sıfırlanır.
+Uğursuz cəhdlər və yeni cihaz
+PIN və ya imza 3 dəfə ardıcıl səhv olarsa → hesab 30 dəqiqəlik bloklanır, istifadəçiyə bildiriş gedir (GMA 2.2.3).
+Yeni cihazdan giriş: OTP + PIN + təkrar liveness (5.1-dəki 3 hərəkət).
+Yeni cihazda ilk 24 saat: 200 AZN-dən böyük köçürmələr 30 dəqiqəlik gözləməyə düşür (fraud siqnalı, 5.8).
+Ekranlar
+Ekran
+Məzmun
+Kilid ekranı
+Face ID düyməsi, PIN klaviaturası, qalan cəhd sayı
+Təsdiq vərəqi (bottom sheet)
+Məbləğ, alan (ad, maskalanmış nömrə), komissiya, "Face ID ilə təsdiqlə"
+Etibar edilən şəxslər
+Siyahı, əlavə et (GMA ilə), sil
+Cihazlar
+Aktiv cihazlar, "Bu cihazı çıxar"
+API
+Metod
+Yol
+Təsvir
+GET
+/api/v1/auth/challenge
+→ {nonce, expiresAt}
+POST
+/api/v1/auth/login
+{deviceId, nonce, signature} → tokenlər
+POST
+/api/v1/auth/refresh
+{refreshToken}
+POST
+/api/v1/auth/logout
+Sessiyanı bağlayır
+POST
+/api/v1/sca/{challengeId}/confirm
+{signature} → əməliyyat icra olunur
+GET
+/api/v1/trusted-beneficiaries
+Siyahı
+POST
+/api/v1/trusted-beneficiaries
+{payeeType, payeeRef} → həmişə REQUIRE_SCA
+DELETE
+/api/v1/trusted-beneficiaries/{id}
+Silmə
+GET
+/api/v1/devices
+Cihazlar
+DELETE
+/api/v1/devices/{id}
+Cihazı ayırmaq
+DB
+refresh_tokens: id, user_id, device_id, token_hash, expires_at, revoked_at
+auth_attempts: id, user_id, device_id, type (PIN, SIGNATURE), success, created_at
+sca_challenges: id, user_id, operation_type, operation_ref, amount_minor, payee_ref, nonce, status (PENDING, CONFIRMED, EXPIRED, FAILED), expires_at
+sca_decisions: id, user_id, operation_ref, decision, reason, created_at (audit)
+trusted_beneficiaries: id, user_id, payee_type (USER, CARD_TOKEN, MERCHANT), payee_ref, display_name, created_at
+Qəbul meyarları
+☐ 20 AZN-lik ödəniş GMA-sız keçir; 6-cı ardıcıl kiçik ödəniş GMA tələb edir.
+☐ Etibar edilən şəxsə 150 AZN köçürmə GMA-sız keçir; siyahıya əlavə GMA tələb edir.
+☐ 3 səhv PIN-dən sonra hesab bloklanır və bildiriş gəlir.
+☐ 5 dəqiqə aktivsizlikdən sonra kilid ekranı çıxır.
+☐ Məbləğ dəyişdirilmiş imza server tərəfindən rədd edilir (dinamik bağlama).
+5.3 Balans və top-up
+İstifadəçi balansını 3 yolla artırır: başqa bankın kartı, ödəniş terminalı və açıq bankçılıq. Hər üçünün xarici tərəfi kampus-sim-dədir; ledger yazılışı yalnız sim-dən imzalı təsdiq (webhook) gələndən sonra edilir.
+İstifadəçi hekayələri
+Tələbə kimi istənilən bankın kartından balansımı artırmaq istəyirəm.
+Bank kartı olmayan tələbə kimi terminalda nağd pulla balans artırmaq istəyirəm.
+Tələbə kimi balansımdakı pulu istənilən vaxt geri çıxara bilmək istəyirəm.
+Top-up mənbələri
+Mənbə
+Axın
+Mock
+Bank kartı
+Məbləğ → sim-in kart forması (PAN Kampusa gəlmir) → 3DS OTP → webhook
+Kart ekvayrinqi
+Terminal
+App 8 rəqəmli kod yaradır (15 dəq etibarlı) → sim-in "Terminal" səhifəsində kod + nağd məbləğ → webhook
+Terminal şəbəkəsi
+Açıq bankçılıq
+Bank seç → sim-də razılıq ekranı → hesabdan çəkmə → webhook
+Mərkəzi Bankın açıq bankçılıq platforması
+AniPay ilə gələn
+Başqa bankdan telefon nömrəsinə köçürmə (5.5)
+AniPay
+Ledger yazılışı: D CUSTOMER_FUNDS_BANK / C USER_WALLET (bölmə 4).
+Pulun geri çıxarılması
+E-pul sahibinin tələbi ilə qalıq dəyəri dərhal geri qaytarılmalıdır. Kampusda bu, istifadəçinin öz kartına köçürmə ilə edilir və 5.6 modulundan keçir ("Öz kartıma çıxar" düyməsi).
+Ekranlar
+Ekran
+Məzmun
+Ana ekran
+Mövcud balans (böyük), "Artır", "Göndər", "QR", "Kartlar"; son 5 əməliyyat
+Top-up seçimi
+3 mənbə kartı
+Kart top-up
+Məbləğ, saxlanmış kartlar (token), "Yeni kart"
+Terminal kodu
+Böyük 8 rəqəmli kod, geri sayım, təlimat
+Bank seçimi
+Banklar siyahısı (sim-dən), razılıq
+Əməliyyat tarixçəsi
+Filtr (növ, tarix), hər əməliyyatın detalı
+API
+Metod
+Yol
+Təsvir
+GET
+/api/v1/wallet
+{ledgerBalance, heldAmount, availableBalance, limits}
+GET
+/api/v1/wallet/transactions
+Səhifələnmiş tarixçə
+POST
+/api/v1/topups/card
+{amountMinor, cardToken?} → {topupId, redirectUrl}
+POST
+/api/v1/topups/terminal-code
+{} → {code, expiresAt}
+POST
+/api/v1/topups/open-banking
+{bankCode, amountMinor} → {consentUrl}
+POST
+/internal/webhooks/topups
+Sim-dən, HMAC imzalı: {topupId, status, amountMinor}
+DB
+topups: id, user_id, source (CARD, TERMINAL, OPEN_BANKING, ANIPAY), amount_minor, status (CREATED, PENDING, COMPLETED, FAILED, EXPIRED), external_ref, journal_entry_id, created_at
+topup_codes: code, user_id, expires_at, used_at
+saved_cards: id, user_id, token, last4, brand, bank_name, created_at (yalnız token)
+Biznes qaydaları
+Webhook imzası (X-Sim-Signature, HMAC-SHA256) yoxlanılmadan heç bir yazılış edilmir.
+Eyni topupId üçün ikinci webhook yeni yazılış yaratmır (idempotent).
+Yeni hesab limiti: balans maks. 2 000 AZN; aşan top-up rədd edilir.
+Terminal kodu birdəfəlikdir və 15 dəqiqədən sonra etibarsızdır.
+Qəbul meyarları
+☐ Kartla 20 AZN top-up 3DS mock-dan sonra balansda görünür.
+☐ Terminal kodu sim səhifəsində daxil edildikdə balans 2 saniyə ərzində artır.
+☐ Eyni webhook iki dəfə göndərildikdə balans bir dəfə artır.
+☐ İmzasız webhook 401 ilə rədd edilir.
+5.4 QR ödəniş və satıcı kassası
+Tələbə satıcının QR kodunu skan edib Face ID ilə ödəyir, satıcının kassa ekranında "Ödəniş alındı" 1 saniyə ərzində görünür. QR kodlar Mərkəzi Bankın tələb etdiyi EMV® QR Code standartında yaradılır və oxunur.
+İstifadəçi hekayələri
+Tələbə kimi kafedə QR skan edib bir toxunuşla ödəmək istəyirəm.
+Satıcı kimi kassada məbləği yazıb QR göstərmək və ödənişin gəldiyini dərhal görmək istəyirəm.
+Satıcı kimi səhv ödənişi geri qaytarmaq istəyirəm.
+QR növləri
+Növ
+Kod (tag 01)
+İstifadə
+Dinamik
+12
+Kassada hər ödəniş üçün; məbləğ QR-ın içindədir, 5 dəqiqə etibarlıdır
+Statik
+11
+Masada çap olunmuş stiker; məbləği müştəri daxil edir
+EMV QR formatı (Merchant-Presented Mode)
+Hər sahə TAG(2) + LENGTH(2) + VALUE şəklindədir.
+Tag
+Sahə
+Kampus dəyəri
+00
+Format versiyası
+01
+01
+QR növü
+11 statik, 12 dinamik
+26
+Satıcı hesab məlumatı
+alt sahələr: 00 = az.kampus, 01 = satıcı ID-si
+52
+MCC
+məs. 5812 (restoran), 5942 (kitab)
+53
+Valyuta
+944 (AZN)
+54
+Məbləğ
+15.00 (yalnız dinamik)
+58
+Ölkə
+AZ
+59
+Satıcının adı
+Kafe Xazar
+60
+Şəhər
+Baki
+62
+Əlavə məlumat
+alt sahə 05 = ödəniş niyyətinin ID-si (dinamik)
+63
+CRC
+CRC16-CCITT (poly 0x1021, init 0xFFFF), 6304 daxil olmaqla bütün yük üzərində
+CRC uyğun gəlmirsə, mobil QR-ı rədd edir və "QR kod zədələnib" göstərir.
+Ödəniş axını
+Mobil QR-ı skan edir, TLV-ni parse edir, CRC-ni yoxlayır.
+POST /payments/qr/parse → satıcının adı, MCC, məbləğ (dinamik), niyyətin statusu.
+Təsdiq ekranı: satıcı, məbləğ, ödəniş mənbəyi (Balans / Sonra ödə / Kripto*).
+POST /payments/qr → ScaDecisionService → EXEMPT isə dərhal, REQUIRE_SCA isə Face ID təsdiqindən sonra.
+Ledger: D USER_WALLET / C MERCHANT_WALLET, sonra komissiya D MERCHANT_WALLET / C FEE_INCOME.
+WebSocket: /topic/merchants/{merchantId}/payments → kassa ekranında yaşıl "Ödəniş alındı".
+İstifadəçiyə push: "Kafe Xazar · −15.00 AZN".
+* Kripto yalnız feature flag aktiv olduqda (5.10).
+Geri qaytarma
+Satıcı kassa tarixçəsindən tam geri qaytarma edir: əks yazılışlar (D MERCHANT_WALLET / C USER_WALLET), komissiya da geri qaytarılır. Ödənişdən 30 gün sonra geri qaytarma bağlanır.
+Ödəyicinin QR-ı (Consumer-Presented Mode) — arzuolunan
+Tətbiq 60 saniyəlik birdəfəlik QR göstərir, satıcının skaneri onu oxuyur. Vaxt qalarsa edilir.
+Ekranlar
+Ekran
+Platforma
+Məzmun
+QR skan
+Mobil
+Kamera, fənər, qalereyadan QR
+Ödəniş təsdiqi
+Mobil
+Satıcı loqosu/adı, məbləğ (statikdə daxiletmə), mənbə seçimi
+Uğurlu ödəniş
+Mobil
+Animasiya, çek detalı, "Hesabı böl" (5.5)
+Kassa
+Admin (MERCHANT rolu)
+Rəqəm klaviaturası, "QR yarat", böyük QR, gözləmə statusu, "Ödəniş alındı"
+Kassa tarixçəsi
+Admin
+Bugünkü ödənişlər, cəmi, geri qaytar
+Statik QR
+Admin
+Çap üçün PDF/PNG
+API
+Metod
+Yol
+Təsvir
+POST
+/api/v1/merchant/qr/dynamic
+{amountMinor, reference?} → {intentId, qrPayload, expiresAt}
+GET
+/api/v1/merchant/qr/static
+→ {qrPayload, pngUrl}
+GET
+/api/v1/merchant/payments
+Satıcının ödənişləri
+POST
+/api/v1/merchant/payments/{id}/refund
+Tam geri qaytarma
+POST
+/api/v1/payments/qr/parse
+{qrPayload} → satıcı, məbləğ, niyyət statusu
+POST
+/api/v1/payments/qr
+{qrPayload, amountMinor, fundingSource} + Idempotency-Key → {paymentId, status, scaChallenge?}
+DB
+merchants: id, name, mcc, city, logo_url, fee_bps, status, user_id (kassir girişi)
+payment_intents: id, merchant_id, amount_minor, reference, status (OPEN, PAID, EXPIRED, CANCELLED), expires_at
+qr_payments: id, user_id, merchant_id, intent_id, amount_minor, fee_minor, funding_source, status, journal_entry_id, created_at
+refunds: id, payment_id, amount_minor, journal_entry_id, created_at
+Biznes qaydaları
+Dinamik niyyət yalnız bir dəfə ödənilə bilər; ikinci cəhd INTENT_ALREADY_PAID.
+Satıcı komissiyası fee_bps-dən hesablanır (default 50 = 0.5%), qəpiyə yuvarlaqlaşdırılır.
+Komissiyalar gündəlik iş ilə OWN_FUNDS_BANK-a köçürülür (Qayda 7.6).
+Qəbul meyarları
+☐ Kassada 15 AZN yaradılan QR mobil ilə ödənir və kassa ekranı 1 saniyə ərzində yenilənir.
+☐ CRC-si dəyişdirilmiş QR rədd edilir.
+☐ Eyni dinamik QR ikinci dəfə ödənə bilmir.
+☐ Statik QR ilə müştəri məbləği daxil edib ödəyə bilir.
+☐ Geri qaytarma balansı və komissiyanı bərpa edir.
+5.5 P2P köçürmə, pul istə və hesabı böl
+Tələbə telefon nömrəsi ilə pul göndərir: alan Kampus istifadəçisidirsə köçürmə daxili və anidir, deyilsə partnyor bank vasitəsilə AniPay-ə gedir. Pul istə və hesabı böl eyni köçürmə mexanizmi üzərində qurulub.
+İstifadəçi hekayələri
+Tələbə kimi dostuma telefon nömrəsi ilə 2 toxunuşda pul göndərmək istəyirəm.
+Tələbə kimi göndərməzdən əvvəl alanın adını görmək istəyirəm ki, səhv adama getməsin.
+Tələbə kimi 60 AZN-lik kafe hesabını 4 dosta bölüb kimin ödədiyini izləmək istəyirəm.
+Tələbə kimi səhv göndərdiyim köçürməni 5 saniyə ərzində ləğv etmək istəyirəm.
+Alanın müəyyən edilməsi
+Kontaktlar: telefon nömrələri cihazda normallaşdırılır (+994XXXXXXXXX), SHA-256 hash ilə serverə göndərilir. Server Kampus istifadəçilərini qaytarır. Açıq nömrələr serverə getmir.
+Nömrə daxil edildikdə: GET /transfers/resolve?phone=...
+Kampus istifadəçisi → INTERNAL, maskalanmış ad ("Sərxan B.").
+Kampusda deyil → sim-in AniPay kataloqu → ANIPAY, bankın adı + maskalanmış ad.
+Heç yerdə tapılmadı → "Bu nömrə AniPay-də qeydiyyatda deyil, kart nömrəsi ilə göndərin" (5.6).
+Köçürmə axını
+Məbləğ, qeyd (emoji ilə), təsdiq ekranı (alanın maskalanmış adı ilə).
+POST /transfers → ScaDecisionService (etibar edilən şəxs, kiçik məbləğ və s.).
+Köçürmə SCHEDULED statusu ilə yaradılır, execute_at = now + 5 san. Ekranda "Ləğv et" geri sayımı.
+5 saniyə bitəndə worker icra edir:
+INTERNAL: D USER_WALLET(A) / C USER_WALLET(B) → COMPLETED; B-yə push.
+ANIPAY: D USER_WALLET(A) / C ANIPAY_SETTLEMENT → sim-ə göndərilir → PENDING. Sim 2–10 saniyədə webhook ilə SETTLED və ya REJECTED qaytarır. Rədd → əks yazılış, istifadəçiyə bildiriş.
+Gələn AniPay köçürməsi (sim webhook): D CUSTOMER_FUNDS_BANK / C USER_WALLET.
+Pul istə
+İstifadəçi bir və ya bir neçə Kampus istifadəçisindən məbləğ və qeydlə pul istəyir.
+Alan "Gələn sorğular" bölməsində görür: "Ödə" (adi köçürmə axını) və ya "İmtina et".
+Sorğunun müddəti 7 gündür; 24 saatdan bir xatırlatma push-u (maks. 2).
+Hesabı böl
+Başlanğıc: uğurlu QR ödənişindən ("Hesabı böl" düyməsi) və ya əl ilə məbləğ daxil edərək.
+İştirakçıları seç; bölgü bərabər (qalıq qəpik təşkilatçıya düşür) və ya fərdi məbləğlərlə.
+Hər iştirakçıya bağlı pul istə sorğusu yaradılır (split_id).
+Təşkilatçının ekranında irəliləyiş: "3/4 ödəyib · 45.00 / 60.00 AZN".
+Limitlər
+Limit
+Standart
+Yeni hesab (30 gün)
+Bir köçürmə
+1 000 AZN
+300 AZN
+Gündəlik cəmi
+2 000 AZN
+500 AZN
+AniPay ilə gündəlik
+1 000 AZN
+300 AZN
+Ekranlar
+Ekran
+Məzmun
+Göndər
+Favoritlər (etibar edilənlər), son alanlar, kontaktlar, nömrə sahəsi
+Məbləğ
+Klaviatura, qeyd, emoji, mövcud balans
+Təsdiq
+Alanın maskalanmış adı, kanal (Kampus / AniPay · Bank adı), məbləğ, komissiya
+Geri sayım
+5 saniyəlik dairə, böyük "Ləğv et"
+Gələn sorğular
+Kimdən, məbləğ, qeyd, Ödə / İmtina
+Hesabı böl
+İştirakçılar, bərabər/fərdi, cəmi; sonra irəliləyiş ekranı
+API
+Metod
+Yol
+Təsvir
+POST
+/api/v1/contacts/match
+{phoneHashes[]} → Kampus istifadəçiləri
+GET
+/api/v1/transfers/resolve
+?phone= → {channel, maskedName, bankName?}
+POST
+/api/v1/transfers
+{phone, amountMinor, note} + Idempotency-Key → {transferId, status, executeAt, scaChallenge?}
+POST
+/api/v1/transfers/{id}/cancel
+Yalnız SCHEDULED statusunda
+GET
+/api/v1/transfers/{id}
+Status
+POST
+/api/v1/payment-requests
+{payeePhones[], amountMinor, note}
+GET
+/api/v1/payment-requests?direction=incoming
+Gələn sorğular
+POST
+/api/v1/payment-requests/{id}/pay
+Köçürmə axınına keçir
+POST
+/api/v1/payment-requests/{id}/decline
+İmtina
+POST
+/api/v1/splits
+{sourcePaymentId?, totalMinor, participants[{phone, amountMinor?}], mode}
+GET
+/api/v1/splits/{id}
+İrəliləyiş
+POST
+/internal/webhooks/anipay
+Sim-dən: gedən statusu və gələn köçürmələr
+DB
+transfers: id, sender_id, channel (INTERNAL, ANIPAY), recipient_user_id, recipient_phone, recipient_masked_name, amount_minor, note, status (SCHEDULED, CANCELLED, PENDING_SCA, PENDING, COMPLETED, REJECTED, REVERSED), execute_at, external_ref, journal_entry_id, created_at
+payment_requests: id, requester_id, payer_user_id, amount_minor, note, split_id, status (OPEN, PAID, DECLINED, EXPIRED), transfer_id, expires_at
+splits: id, organizer_id, source_payment_id, total_minor, mode (EQUAL, CUSTOM), created_at
+Qəbul meyarları
+☐ Kampus istifadəçisinə 10 AZN köçürmə 5 saniyəlik geri sayımdan sonra hər iki balansda görünür.
+☐ Geri sayım zamanı "Ləğv et" köçürməni dayandırır, balans dəyişmir.
+☐ Kampusda olmayan nömrəyə köçürmə AniPay mock ilə SETTLED olur.
+☐ AniPay REJECTED qaytardıqda pul avtomatik geri qayıdır.
+☐ 60 AZN 4 nəfərə bölünür, hər biri 15 AZN sorğu alır, irəliləyiş yenilənir.
+5.6 Kart nömrəsinə köçürmə
+Tələbə istənilən Azərbaycan bankının kartına kart nömrəsi ilə pul göndərir. Kart nömrəsi (PAN) heç vaxt Kampus serverinə gəlmir: o, sim-in təhlükəsiz formasında daxil edilir və Kampus yalnız token alır. Pul əvvəl dondurulur (HOLD), kart şəbəkəsi təsdiq edəndən sonra tutulur (CAPTURE).
+İstifadəçi hekayələri
+Tələbə kimi anamın kartına nömrə ilə pul göndərmək istəyirəm.
+Tələbə kimi kart nömrəsini yazanda hansı banka getdiyini görmək istəyirəm.
+Tələbə kimi balansımı öz kartıma çıxarmaq istəyirəm.
+Axın
+Məbləğ daxil edilir, mövcud balans və komissiya göstərilir.
+Kart: saxlanmış alan kartı seçilir və ya "Yeni kart" → sim-in təhlükəsiz forması (WebView).
+Forma daxilində: Luhn yoxlaması (səhv nömrə dərhal qırmızı), BIN üzrə bankın adı və loqosu.
+Forma Kampusa yalnız {cardToken, bin, last4, bankName, brand} qaytarır.
+POST /card-transfers → ScaDecisionService → lazım olarsa Face ID.
+LedgerService.placeHold(...) → status HELD.
+kampus-sim kart şəbəkəsinə OCT göndərilir → status SENT.
+Sim 1–3 saniyədə cavab verir:
+APPROVED → captureHold: D USER_WALLET / C CARD_SETTLEMENT + komissiya D USER_WALLET / C FEE_INCOME → COMPLETED.
+DECLINED → releaseHold → FAILED, səbəb istifadəçiyə göstərilir.
+60 saniyədə cavab gəlməzsə → sim-dən status sorğusu; yenə bilinməzsə → UNDER_REVIEW və admin növbəsi.
+Status maşını
+CREATED → PENDING_SCA → HELD → SENT → COMPLETED | FAILED | UNDER_REVIEW
+Komissiya
+Əməliyyat
+Komissiya
+Başqasının kartına
+0.5%, min. 0.30 AZN
+Öz kartına çıxarış
+Ayda ilk 500 AZN pulsuz, sonra 0.5%
+Komissiya təsdiq ekranında əməliyyatdan əvvəl göstərilir.
+Saxlanmış alan kartları
+Ləqəb + son 4 rəqəm: "Anamın kartı ••1234".
+Əlavə etmək etibar edilən şəxs kimi qeydiyyatdır və GMA tələb edir (GMA 3.7).
+Fraud qaydaları (5.8 ilə)
+Yeni karta 200 AZN-dən çox → xəbərdarlıq ekranı + GMA.
+Gündə maks. 3 yeni alan kartı.
+Qeyddə fırıldaq açar sözləri ("uduş", "depozit", "kredit") → xəbərdarlıq.
+Ekranlar
+Ekran
+Məzmun
+Karta göndər
+Saxlanmış kartlar, "Yeni kart", "Öz kartıma çıxar"
+Kart forması (sim)
+16 rəqəm sahəsi, bank loqosu canlı, Luhn xətası
+Təsdiq
+4169 •••• •••• 1234, bank, məbləğ, komissiya, cəmi
+Status
+"Göndərilir..." → "Çatdı" və ya "Uğursuz: pul balansınıza qaytarıldı"
+API
+Metod
+Yol
+Təsvir
+POST
+/api/v1/card-transfers/card-session
+→ {sessionUrl} (sim-in təhlükəsiz forması)
+POST
+/api/v1/card-transfers/fee-quote
+{cardToken, amountMinor} → {feeMinor, totalMinor}
+POST
+/api/v1/card-transfers
+{cardToken, amountMinor, note, saveAs?} + Idempotency-Key
+GET
+/api/v1/card-transfers/{id}
+Status
+GET
+/api/v1/recipient-cards
+Saxlanmış kartlar
+DELETE
+/api/v1/recipient-cards/{id}
+Silmə
+POST
+/internal/webhooks/card-network
+Sim-dən OCT nəticəsi
+DB
+card_transfers: id, user_id, card_token, bin, last4, bank_name, amount_minor, fee_minor, purpose (P2P, WITHDRAW_OWN), status, hold_id, network_ref, decline_reason, journal_entry_id, created_at
+recipient_cards: id, user_id, card_token, bin, last4, bank_name, nickname, is_own, created_at
+Qəbul meyarları
+☐ Luhn-a uyğun olmayan nömrə formada rədd edilir.
+☐ BIN daxil edildikdə bankın adı və loqosu görünür.
+☐ Sim DECLINED qaytardıqda HOLD açılır və balans bərpa olunur.
+☐ Kampus DB-də heç bir cədvəldə 16 rəqəmli PAN yoxdur (avtomatik test: regex axtarışı).
+☐ Öz kartına çıxarış ayda 500 AZN-dək komissiyasızdır.
+5.7 Virtual kartlar və avtorizasiya
+Tələbə Kampus balansına bağlı virtual Visa/Mastercard kartları açır və hər birinə öz qaydalarını qoyur. Kart ilə ödəniş edildikdə avtorizasiya sorğusu Kampusa gəlir və Kampus 150 ms ərzində qərar verir. Abunəlik fırıldağının (Cursor hekayəsi) qarşısı məhz burada alınır.
+İstifadəçi hekayələri
+Tələbə kimi Cursor abunəliyi üçün yalnız Cursor-da işləyən və aylıq 20 USD limitli kart istəyirəm.
+Tələbə kimi tanımadığım saytda bir dəfə işləyib sonra ölən kart istəyirəm.
+Tələbə kimi gözləmədiyim çıxılmanı bir toxunuşla dayandırmaq istəyirəm.
+Kart növləri
+Növ
+Kod
+Davranış
+Əsas kart
+STANDARD
+Bütün satıcılarda, istifadəçinin limitləri ilə
+Satıcıya kilidli
+MERCHANT_LOCKED
+Yalnız seçilmiş və ya ilk istifadə olunan satıcıda işləyir
+Birdəfəlik
+SINGLE_USE
+İlk təsdiqlənmiş ödənişdən sonra avtomatik bağlanır
+Hər istifadəçidə maks. 5 aktiv kart.
+Kartın məlumatları
+Kart sim-də (BIN sponsor bank mock) yaradılır: PAN, son istifadə tarixi, CVV yalnız sim-də saxlanılır. Kampus yalnız cardRef, last4, brand saxlayır. "Kart məlumatlarını göstər" GMA tələb edir və sim-in 60 saniyəlik təhlükəsiz görüntüsünü (WebView) açır.
+Kart nəzarətləri
+Nəzarət
+Default
+Bir ödəniş limiti
+300 AZN
+Aylıq limit
+1 000 AZN (MERCHANT_LOCKED: istifadəçi təyin edir, məs. 20 USD)
+Onlayn ödənişlər
+Açıq
+Xarici ödənişlər
+Açıq
+Dondurulub
+Xeyr
+Avtorizasiya qərarı
+Sim-in "Satıcı simulyatoru" (məs. Netflix 9.99 USD, Cursor 20 USD və ya 200 USD) POST /internal/card-auth göndərir. Kampus qaydaları ardıcıllıqla yoxlayır və ilk uyğunsuzluqda rədd edir:
+Kart aktivdir və dondurulmayıb → əks halda CARD_FROZEN.
+Satıcı bloklanmış siyahıda deyil → MERCHANT_BLOCKED.
+MERCHANT_LOCKED kartda satıcı uyğundur → MERCHANT_MISMATCH.
+Onlayn/xarici nəzarətlər icazə verir → CONTROL_DISABLED.
+Məbləğ AZN-ə çevrilir (mock Mərkəzi Bank məzənnəsi + 1% spread, yalnız ödəniş anında, Qayda 10.1).
+Bir ödəniş və aylıq limit aşılmır → LIMIT_EXCEEDED.
+Anomaliya: məbləğ bu satıcıdan əvvəlki ödənişlərin medianından 3 dəfədən çoxdursa → CONFIRMATION_REQUIRED + push: "Cursor 200 USD tələb edir. Siz idiniz?". İstifadəçi "Bəli" desə, satıcıya 30 dəqiqəlik birdəfəlik icazə verilir.
+Mövcud balans kifayətdir → INSUFFICIENT_FUNDS.
+Hamısı keçdisə → APPROVED, CARD_AUTH HOLD qoyulur.
+Sim sonra klirinq mesajı göndərir → captureHold: D USER_WALLET / C CARD_SETTLEMENT. Ləğv mesajı gələrsə → releaseHold.
+Abunəliklər ekranı
+Sim-dən gələn təkrarlanan (merchant-initiated) ödənişlər satıcıya görə qruplaşdırılır: satıcı, son çıxılma, tipik məbləğ, növbəti gözlənilən tarix və "Blokla" düyməsi. Bloklama həmin satıcını kartın qara siyahısına əlavə edir.
+"Bu mən deyiləm"
+Hər kart əməliyyatı bildirişində düymə var. Basıldıqda kart dərhal dondurulur və disputes qeydi açılır (status OPEN). Admin fraud növbəsində görür; mock chargeback ilə məbləğ geri qaytarıla bilər.
+Ekranlar
+Ekran
+Məzmun
+Kartlar
+Kart vizualları (çevrilən), növ nişanı, son 4 rəqəm
+Yeni kart
+Növ seçimi, satıcı (kilidli üçün), limit
+Kart detalı
+Nəzarətlər (switch-lər), limitlər, "Dondur", "Məlumatları göstər"
+Abunəliklər
+Satıcılar siyahısı, "Blokla"
+Əməliyyat təsdiqi push
+"Siz idiniz?" → Bəli / Bu mən deyiləm
+API
+Metod
+Yol
+Təsvir
+POST
+/api/v1/cards
+{type, merchantName?, monthlyLimitMinor?, currency?}
+GET
+/api/v1/cards
+Kartlar
+PATCH
+/api/v1/cards/{id}/controls
+Limitlər və switch-lər
+POST
+/api/v1/cards/{id}/freeze / unfreeze
+Dondurma
+POST
+/api/v1/cards/{id}/reveal
+GMA → {secureViewUrl} (60 san)
+GET
+/api/v1/cards/{id}/subscriptions
+Abunəliklər
+POST
+/api/v1/cards/{id}/blocked-merchants
+{merchantKey}
+POST
+/api/v1/card-auth/{authId}/confirm
+İstifadəçinin "Bəli" cavabı
+POST
+/api/v1/disputes
+{cardAuthId, reason}
+POST
+/internal/card-auth
+Sim-dən avtorizasiya → {decision, reasonCode}
+POST
+/internal/webhooks/card-clearing
+Klirinq və ləğv
+DB
+cards: id, user_id, card_ref, last4, brand, type, status (ACTIVE, FROZEN, CLOSED), locked_merchant_key, per_tx_limit_minor, monthly_limit_minor, limit_currency, online_enabled, foreign_enabled, created_at
+card_authorizations: id, card_id, merchant_key, merchant_name, mcc, country, amount_minor, currency, amount_azn_minor, fx_rate, is_recurring, decision, reason_code, hold_id, status (APPROVED, DECLINED, CAPTURED, REVERSED), created_at
+card_blocked_merchants: card_id, merchant_key, created_at
+merchant_one_time_approvals: card_id, merchant_key, amount_minor, expires_at
+disputes: id, user_id, card_authorization_id, reason, status (OPEN, RESOLVED_REFUND, REJECTED), created_at
+Qəbul meyarları
+☐ Cursor-a kilidli kart Netflix sorğusunu MERCHANT_MISMATCH ilə rədd edir.
+☐ Cursor-dan 20 USD təsdiqlənir; sonra 200 USD CONFIRMATION_REQUIRED olur və push gəlir.
+☐ Birdəfəlik kart ikinci ödənişdə rədd edilir.
+☐ "Bu mən deyiləm" kartı dondurur və admin növbəsində mübahisə görünür.
+☐ Avtorizasiya qərarı 150 ms-dən tez qaytarılır.
+Açıq məsələ: xaricdən elektron ticarət xidmətlərinə ödənişlərdə 18% ƏDV-nin tutulması kart partnyoru ilə dəqiqləşdirilməlidir; MVP-də tətbiq edilmir.
+5.8 Fraud engine
+Hər pul hərəkəti icradan əvvəl qaydalar mühərrikindən keçir və 0–100 arası risk balı alır. Bal həm əməliyyatın taleyini (icazə, GMA, xəbərdarlıq, saxlama, bloklama), həm də GMA-dan azadetməni (TRA) müəyyən edir. Bu modul GMA Qaydasının 4-cü hissəsinin (monitorinq) tələbini ödəyir.
+Hərəkətlər
+Bal
+Hərəkət
+İstifadəçi nə görür
+0–29
+ALLOW
+Heç nə; TRA istisnası mümkündür
+30–59
+REQUIRE_SCA
+Face ID təsdiqi
+60–79
+WARN_AND_SCA
+Xəbərdarlıq ekranı + Face ID
+80–100
+HOLD_FOR_REVIEW
+"Əməliyyat yoxlanılır", pul HOLD-da, admin növbəsi
+Qara siyahı
+BLOCK
+"Əməliyyat mümkün deyil"
+Qaydalar
+Kod
+Siqnal
+Bal
+NEW_DEVICE
+Cihaz 24 saatdan az bağlıdır və məbləğ > 200 AZN
++50
+VELOCITY
+Son 10 dəqiqədə 5-dən çox gedən əməliyyat
++40
+NEW_PAYEE
+İlk dəfə göndərilən alan və məbləğ > 200 AZN
++35
+SCAM_KEYWORDS
+Qeyddə "uduş", "depozit", "kredit", "bonus", "investisiya"
++30
+AMOUNT_SPIKE
+Məbləğ istifadəçinin 30 günlük medianından 5 dəfə çox
++30
+MULE_RECIPIENT
+Alanın hesabı 7 gündən gəncdir və 24 saatda 5+ fərqli göndəricidən pul alıb
++45
+NIGHT_LARGE
+01:00–06:00 arası, məbləğ > 300 AZN
++20
+FOREIGN_GEO
+Cihaz IP-si Azərbaycandan kənarda (GMA 4.2.3.5)
++30
+BLACKLIST
+Alan qara siyahıdadır
+BLOCK
+Qaydalar toplanır (maks. 100). Hər qayda admin paneldən açılıb-bağlanır və həddi dəyişdirilir.
+TRA istisnası (GMA 3.10, 4.2, Əlavə 1)
+Əməliyyat GMA-dan yalnız bu şərtlərin hamısı ödənəndə azad edilir:
+Risk balı < 30.
+Məbləğ həddi və rüblük fraud dərəcəsi Əlavə 1-ə uyğundur:
+Məbləğ həddi
+Məsafədən kredit köçürmələri
+Məsafədən kart ödənişləri
+100 AZN-ədək
+0.015%
+0.13%
+250 AZN-ədək
+0.01%
+0.06%
+500 AZN-ədək
+0.005%
+0.01%
+Fraud dərəcəsi həddi aşarsa, TRA istisnası avtomatik dayandırılır (GMA 4.5) və admin paneldə qırmızı göstərici yanır.
+Fraud dərəcəsi (GMA 4.4)
+fraud_rate = rüb ərzində fırıldaq kimi təsdiqlənmiş əməliyyatların həcmi / həmin növ əməliyyatların ümumi həcmi. Hər əməliyyat növü üzrə ayrıca hesablanır; GMA-sız keçən əməliyyatlar da daxildir. Demo üçün həm rüblük, həm də "son 7 gün" göstərilir.
+Xəbərdarlıq ekranı (WARN)
+"Diqqət: fırıldaqçılar tez-tez uduş, depozit və ya kredit vəd edərək pul istəyir. Bu şəxsi şəxsən tanıyırsınız?" Düymələr: "Tanıyıram, davam et" (sonra Face ID) və "Ləğv et".
+Fraud növbəsi (admin)
+HOLD_FOR_REVIEW halları burada görünür: istifadəçi, məbləğ, alan, tetiklənən qaydalar, bal. Admin "Təsdiqlə" (HOLD capture olunur) və ya "Rədd et" (HOLD açılır, istifadəçiyə bildiriş) seçir. Cavab gözləmə müddəti 30 dəqiqə; vaxt bitərsə avtomatik rədd.
+Texniki tələblər
+Hər qayda FraudRule interfeysini implement edən Spring bean-dir: RuleResult evaluate(FraudContext ctx).
+Sayğaclar Redis-də (sürüşən pəncərə): fraud:{userId}:out:10m, fraud:{recipientId}:senders:24h.
+Qiymətləndirmə < 30 ms.
+Hər qiymətləndirmə fraud_evaluations-a yazılır (audit və fraud dərəcəsi üçün).
+API (admin)
+Metod
+Yol
+Təsvir
+GET
+/api/v1/admin/fraud/cases
+Açıq hallar
+POST
+/api/v1/admin/fraud/cases/{id}/approve
+Təsdiqlə
+POST
+/api/v1/admin/fraud/cases/{id}/reject
+Rədd et
+GET
+/api/v1/admin/fraud/metrics
+Fraud dərəcələri, TRA statusu, qayda tetiklənmələri
+PUT
+/api/v1/admin/fraud/rules/{code}
+{enabled, threshold, score}
+POST
+/api/v1/admin/fraud/blacklist
+{type, value}
+DB
+fraud_evaluations: id, operation_type, operation_ref, user_id, score, action, triggered_rules (jsonb), created_at
+fraud_cases: id, evaluation_id, status (OPEN, APPROVED, REJECTED, EXPIRED), reviewer_id, decided_at
+fraud_rules_config: code, enabled, score, params (jsonb), updated_by, updated_at
+fraud_confirmed: id, operation_ref, operation_type, amount_minor, source (DISPUTE, ADMIN), confirmed_at (fraud dərəcəsi üçün)
+blacklist: id, type (PHONE, CARD_TOKEN, USER), value, reason, created_at
+Qəbul meyarları
+☐ Qeydində "uduş" olan 250 AZN-lik köçürmə xəbərdarlıq ekranı göstərir.
+☐ Yeni cihazdan 300 AZN köçürmə admin növbəsinə düşür və pul HOLD-da qalır.
+☐ Admin "Rədd et" basanda pul istifadəçiyə qayıdır.
+☐ 5 fərqli hesabdan pul alan yeni hesaba köçürmə MULE_RECIPIENT tetikləyir.
+☐ Fraud dərəcəsi həddi aşanda TRA avtomatik söndürülür.
+5.9 Kredit: "Sonra ödə" və partnyor marketplace
+Kredit modulunun iki hissəsi var. "Sonra ödə" Kampusun öz mikrokreditidir: 50 AZN-dək, 2 ayadək, yalnız öz kapitalı hesabına (Qayda 9). Bundan böyük kreditləri partnyor BOKT və banklar verir; Kampus yalnız ərizəni və (razılıqla) scoring datasını ötürür. Hər iki hissə yalnız 18+ istifadəçilər üçündür.
+A. "Sonra ödə" (≤50 AZN)
+İstifadəçi hekayəsi: tələbə kimi balansım çatmayanda kafedə 12 AZN-i indi ödəyib sonra qaytarmaq istəyirəm.
+Uyğunluq (Kampus siyasəti)
+KYC tamamlanıb, yaş ≥ 18, hesab ≥ 14 gündür açıqdır.
+Son 30 gündə ən azı 2 top-up və ya gələn köçürmə.
+Gecikmiş "Sonra ödə" borcu yoxdur.
+Harada istifadə olunur: QR ödənişində ödəniş mənbəyi kimi və virtual kartda "balans çatmayanda Sonra ödə" seçimi aktivdirsə. Kredit yalnız ödəniş əməliyyatı üçün verilir (Qayda 9.1).
+Compliance engine (Qayda 9)
+Hər kredit verilməzdən əvvəl BnplComplianceService yoxlayır və ilk uyğunsuzluqda rədd edir:
+Yoxlama
+Şərt
+Qayda
+Valyuta
+Yalnız AZN
+9.1.1
+Müddət
+Ödəniş tarixi ≤ 60 gün (Kampus default: 30 gün)
+9.1.1
+İstifadəçi limiti
+Mövcud borc + yeni kredit ≤ 50 AZN
+9.1.2
+Kapital
+Məcmu kapital ≥ tələb olunan minimum
+9.1.3
+Portfel limiti
+Verilmiş kreditlərin cəmi ≤ məcmu kapitalın 10%-i
+9.1.4
+Ümidsiz kreditlər
+2 aydan çox gecikmiş + son 12 ayda silinmiş ≤ məcmu kapitalın 1%-i
+9.1.5
+Mənbə
+Yalnız OWN_FUNDS_BANK hesabından maliyyələşmə
+9.2
+Məcmu kapital admin paneldə sistem parametri kimi daxil edilir (demo: 750 000 AZN → portfel limiti 75 000 AZN).
+Ledger: kredit verilməsi və qaytarılması bölmə 4-dəki yazılışlarla aparılır (CREDIT_RECEIVABLE, OWN_FUNDS_BANK).
+Qaytarma
+Ödəniş tarixində balansda vəsait varsa, avtomatik tutulur.
+İstifadəçi istənilən vaxt "İndi qaytar" edə bilər.
+MVP-də faiz və haqq 0-dır; hər ikisi sistem parametri kimi saxlanılır və istifadəçiyə krediti götürməzdən əvvəl göstərilir.
+60 gün ərzində qaytarılmayan kredit BAD statusuna keçir (9.1.5 hesablaması üçün).
+Hesabat: admin paneldən aylıq hesabat Qaydanın 6 nömrəli Əlavəsinin formatında CSV kimi yüklənir (verilmiş, qaytarılmış, ümidsiz, silinmiş kreditlər, kapitalda çəkisi).
+B. Partnyor marketplace
+İstifadəçi hekayəsi: tələbə kimi noutbuk üçün 800 AZN istəyib bir neçə kreditorun təklifini müqayisə etmək istəyirəm.
+Axın
+Ərizə: məbləğ, müddət (3–24 ay), məqsəd (təhsil haqqı, noutbuk, digər).
+Razılıq ekranı: hansı datanın hansı kreditorlarla paylaşılacağı açıq yazılır; consents-ə qeyd.
+Kampus sim-dəki partnyorlara eyni anda ərizə göndərir. Ötürülən data xam əməliyyatlar deyil, hesablanmış göstəricilərdir: orta aylıq daxilolma, aktiv aylar, "Sonra ödə" qaytarma tarixçəsi, müntəzəm daxilolmaların olub-olmaması.
+Partnyorlar 2–5 saniyədə cavab verir. Təkliflər müqayisə ekranında göstərilir.
+İstifadəçi təklifi seçir → müqavilə partnyorla SİMA mock ilə imzalanır.
+Partnyor pulu wallet-ə köçürür (webhook): D CUSTOMER_FUNDS_BANK / C USER_WALLET.
+Aylıq ödənişlər wallet-dən avtomatik tutulur: D USER_WALLET / C LENDER_SETTLEMENT (bu hesab növü bölmə 4-dəki siyahıya əlavə olunur).
+Partnyor hər verilmiş kredit üçün Kampusa referal komissiyası ödəyir (mock: 10 AZN) → FEE_INCOME.
+Mock partnyorlar
+Partnyor
+Qərar məntiqi (mock)
+Faktiki illik faiz (mock)
+Mock BOKT A
+Aktiv aylar ≥ 2 və gecikmə yoxdursa, 1 500 AZN-dək təsdiq
+28%
+Mock Bank B
+Orta aylıq daxilolma ≥ 300 AZN və aktiv aylar ≥ 6
+16%
+Rəqəmlər yalnız demo üçündür.
+Təklif kartında mütləq olanlar: kreditorun adı, məbləğ, müddət, aylıq ödəniş, faktiki illik faiz dərəcəsi, ümumi ödəniləcək məbləğ, "Kreditor: [ad]. Kampus kredit vermir" qeydi.
+Ekranlar
+Ekran
+Məzmun
+Kredit ana səhifəsi
+"Sonra ödə" limiti (məs. 38/50 AZN istifadə olunub), aktiv borclar, "Kredit təklifi al"
+"Sonra ödə" detalı
+Məbləğ, ödəniş tarixi, "İndi qaytar"
+Ərizə
+Məbləğ slayderi, müddət, məqsəd
+Razılıq
+Paylaşılan data, kreditorlar siyahısı
+Təkliflər
+Kartlar, rədd edən partnyor boz rəngdə
+Ödəniş qrafiki
+Aylar, məbləğlər, statuslar
+API
+Metod
+Yol
+Təsvir
+GET
+/api/v1/bnpl/eligibility
+{eligible, availableMinor, reasons[]}
+GET
+/api/v1/bnpl/loans
+Aktiv və bağlı "Sonra ödə" borcları
+POST
+/api/v1/bnpl/loans/{id}/repay
+Əl ilə qaytarma
+POST
+/api/v1/loan-applications
+{amountMinor, termMonths, purpose, consentId}
+GET
+/api/v1/loan-applications/{id}/offers
+Təkliflər
+POST
+/api/v1/loan-offers/{id}/accept
+→ {signRequestId}
+GET
+/api/v1/partner-loans/{id}/schedule
+Qrafik
+GET
+/api/v1/admin/credit/compliance
+Portfel/kapital, ümidsiz kreditlər, limitlər
+GET
+/api/v1/admin/credit/report?month=
+Aylıq hesabat CSV
+DB
+bnpl_loans: id, user_id, source_payment_id, principal_minor, outstanding_minor, issued_at, due_at, status (ACTIVE, REPAID, OVERDUE, BAD, WRITTEN_OFF), journal_entry_id
+system_params: key, value, updated_by, updated_at (total_capital_minor, bnpl_fee_minor, ...)
+loan_applications: id, user_id, amount_minor, term_months, purpose, consent_id, status, created_at
+loan_offers: id, application_id, partner_code, approved, amount_minor, term_months, monthly_payment_minor, apr_bp, total_payable_minor, expires_at
+partner_loans: id, offer_id, user_id, partner_code, contract_ref, status, disbursed_at
+partner_loan_installments: id, partner_loan_id, due_date, amount_minor, status, paid_at
+Qəbul meyarları
+☐ 45 AZN borcu olan istifadəçiyə 10 AZN-lik "Sonra ödə" 9.1.2 səbəbi ilə rədd edilir.
+☐ Admin kapitalı azaldıb portfel limitini aşdıqda yeni "Sonra ödə" kreditləri dayanır.
+☐ "Sonra ödə" kreditində OWN_FUNDS_BANK hesabından maliyyələşmə yazılışı yaranır.
+☐ Marketplace-də iki təklif gəlir; biri təsdiq, biri rədd; təsdiqdə faktiki illik faiz görünür.
+☐ Təklif qəbul ediləndə pul wallet-ə düşür və ödəniş qrafiki yaranır.
+☐ 17 yaşlı istifadəçidə kredit bölməsi bağlıdır.
+Açıq məsələ: kredit vasitəçiliyinin (müştəri yönləndirmə) ayrıca lisenziya tələb edib-etmədiyi Mərkəzi Bank mentorları ilə dəqiqləşdirilməlidir.
+5.10 Kripto modulu
+Kripto modulu tam işləyən şəkildə qurulur, amma default olaraq söndürülüb (crypto.enabled = false). Virtual aktivlər haqqında qanun hələ qəbul olunmayıb, ona görə demoda admin onu "Pilot / Demo rejimi" etiketi ilə açır. Kampus kripto saxlamır: balanslar mock VASP-dadır, satıcı həmişə manat alır.
+İstifadəçi hekayələri
+Tələbə kimi USDT balansımla kafedə ödəmək istəyirəm, satıcı isə manat almalıdır.
+Compliance əməkdaşı kimi riskli ünvandan gələn kriptonun dondurulmasını istəyirəm.
+Feature flag
+Flag
+Default
+Təsir
+crypto.enabled
+false
+false: kripto bölməsində "Virtual aktivlər haqqında qanun qəbul olunduqdan sonra aktivləşəcək" banneri, heç bir əməliyyat yoxdur
+crypto.demo_label
+true
+Bütün kripto ekranlarında "Pilot" nişanı
+Uyğunluq: 18+, ayrıca risk xəbərdarlığının qəbulu, KYC məlumatlarının VASP partnyoru ilə paylaşılmasına razılıq.
+Aktivlər və məzənnə
+USDT (əsas, ödəniş üçün) və BTC (yalnız saxlama).
+Məzənnə: açıq qiymət API-si (CoinGecko), Redis-də 10 saniyəlik cache; API əlçatmazdırsa, sim-in statik məzənnəsi.
+Quote kilidi
+POST /crypto/quotes → {quoteId, rate, cryptoAmount, aznAmount, expiresAt}. Quote Redis-ə 30 saniyəlik TTL ilə yazılır (quote:{id}). Təsdiq zamanı quote Redis-də yoxdursa → QUOTE_EXPIRED, mobil yeni quote alır.
+Əməliyyatlar
+Əməliyyat
+Ledger (yalnız AZN tərəfi)
+VASP tərəfi (sim)
+Al (AZN → USDT)
+D USER_WALLET / C VASP_SETTLEMENT
+USDT balansı artır
+Sat (USDT → AZN)
+D VASP_SETTLEMENT / C USER_WALLET
+USDT balansı azalır
+QR ödəniş kripto ilə
+D VASP_SETTLEMENT / C MERCHANT_WALLET
+USDT satılır
+Kripto ilə QR ödənişi (saga)
+QUOTED → LOCKED → CRYPTO_SOLD → AZN_SETTLED → COMPLETED
+QR skan → mənbə "Kripto (USDT)" → quote: "15.00 AZN = 8.82 USDT, 30 san".
+Face ID → quote kilidlənir (LOCKED).
+Sim VASP USDT-ni satır (CRYPTO_SOLD).
+Ledger yazılışı, satıcıya manat (AZN_SETTLED) → kassa ekranında adi "Ödəniş alındı".
+3-cü addımdan sonra xəta olarsa → kompensasiya: VASP USDT-ni geri qaytarır, status REVERSED.
+Depozit (xarici cüzdandan)
+İstifadəçiyə mock depozit ünvanı və QR göstərilir; şəbəkə seçimi (TRC20) və təxmini vaxt.
+Sim-in "Blokçeyn simulyatoru" depozit göndərir; təsdiqlər hər 2 saniyədə 1 artır (hədd parametrdir, default 12): "Gözlənilir (4/12)".
+AML skrininq: göndərən ünvan sim-in risk xidmətində yoxlanılır. Bal ≥ 80 → vəsait dondurulur, compliance növbəsinə düşür.
+Çıxarış (xarici ünvana)
+GMA tələb olunur; təyinat ünvanı AML skrininqindən keçir; alanın adı formada daxil edilir (travel rule məlumatı kimi saxlanılır); şəbəkə komissiyası göstərilir.
+Limitlər: kripto ilə ödəniş gündə maks. 200 AZN; kripto alışı gündə maks. 500 AZN.
+Ekranlar
+Ekran
+Məzmun
+Kripto (flag OFF)
+Banner + qısa izah, əməliyyat düymələri yoxdur
+Kripto portfeli
+USDT, BTC balansları, AZN ekvivalenti, "Pilot" nişanı
+Al / Sat
+Məbləğ, canlı quote, 30 san geri sayım
+Depozit
+Ünvan, QR, şəbəkə, təsdiq irəliləyişi
+Ödəniş mənbəyi
+QR təsdiqində "Kripto (USDT)" seçimi və AZN ekvivalenti
+API
+Metod
+Yol
+Təsvir
+GET
+/api/v1/crypto/status
+{enabled, demoLabel}
+GET
+/api/v1/crypto/portfolio
+Balanslar (sim-dən)
+POST
+/api/v1/crypto/quotes
+{side, asset, aznAmountMinor? cryptoAmount?}
+POST
+/api/v1/crypto/orders
+{quoteId} + Idempotency-Key → al/sat
+GET
+/api/v1/crypto/deposit-address
+{address, network}
+POST
+/api/v1/crypto/withdrawals
+{asset, amount, address, beneficiaryName}
+PUT
+/api/v1/admin/feature-flags/{key}
+Flag dəyişikliyi (audit-ə yazılır)
+POST
+/internal/webhooks/vasp
+Depozit, təsdiqlər, AML nəticəsi
+DB
+crypto_accounts: id, user_id, vasp_account_ref, status, risk_ack_at
+crypto_orders: id, user_id, side, asset, crypto_amount, azn_amount_minor, rate, quote_id, status, saga_state, journal_entry_id, created_at
+crypto_deposits: id, user_id, asset, amount, from_address, tx_hash, confirmations, required_confirmations, aml_score, status (PENDING, CREDITED, FROZEN)
+crypto_withdrawals: id, user_id, asset, amount, to_address, beneficiary_name, aml_score, status
+feature_flags: key, value, updated_by, updated_at
+Qəbul meyarları
+☐ Flag OFF olanda heç bir kripto endpoint-i işləmir (403 FEATURE_DISABLED).
+☐ 30 saniyəsi keçmiş quote ilə sifariş rədd edilir.
+☐ USDT ilə 15 AZN QR ödənişində satıcı kassası adi manat ödənişi göstərir.
+☐ Riskli ünvandan depozit dondurulur və compliance növbəsində görünür.
+☐ Sim VASP satışdan sonra xəta qaytaranda ödəniş REVERSED olur və USDT geri qayıdır.
+5.11 Bildirişlər
+Bütün bildirişlər outbox hadisələrindən yaranır və NotificationWorker tərəfindən kanallara paylanır. Təhlükəsizlik bildirişləri söndürülə bilməz.
+Kanallar
+Kanal
+Texnologiya
+İstifadə
+Push
+Expo Push
+Ödənişlər, köçürmələr, kart əməliyyatları, təsdiq sorğuları
+In-app
+notifications cədvəli
+Bütün bildirişlərin tarixçəsi
+SMS
+Sim (mock)
+OTP, hesabın bloklanması, qeydiyyatdan imtina
+WebSocket
+STOMP
+Kassa ekranı, admin monitorinq və fraud növbəsi
+Hadisələr
+Hadisə
+Alan
+Mətn nümunəsi
+Söndürülə bilər
+PAYMENT_COMPLETED
+Ödəyən
+"Kafe Xazar · −15.00 AZN"
+Xeyr
+TRANSFER_RECEIVED
+Alan
+"Sərxan B. sizə 10.00 AZN göndərdi 🍕"
+Xeyr
+CARD_AUTH_APPROVED
+Kart sahibi
+"Netflix · −16.98 AZN (9.99 USD)" + "Bu mən deyiləm"
+Xeyr
+CARD_AUTH_CONFIRM
+Kart sahibi
+"Cursor 200 USD tələb edir. Siz idiniz?"
+Xeyr
+PAYMENT_REQUEST
+Ödəyici
+"Aytən sizdən 15.00 AZN istəyir: pizza"
+Bəli
+BNPL_DUE_SOON
+Borclu
+"Sonra ödə: 12.00 AZN, 3 gün qalıb"
+Xeyr
+ACCOUNT_LOCKED
+İstifadəçi
+"3 səhv cəhd. Hesab 30 dəqiqəlik bloklandı"
+Xeyr
+FRAUD_HOLD
+İstifadəçi
+"Əməliyyat yoxlanılır, 30 dəqiqə ərzində cavab"
+Xeyr
+BUDGET_ALERT
+İstifadəçi
+"Yemək büdcəsinin 80%-i xərclənib"
+Bəli
+API
+Metod
+Yol
+Təsvir
+GET
+/api/v1/notifications
+In-app siyahı
+POST
+/api/v1/notifications/{id}/read
+Oxundu
+POST
+/api/v1/push-tokens
+{expoPushToken, deviceId}
+PUT
+/api/v1/notification-preferences
+Söndürülə bilən kateqoriyalar
+DB
+notifications: id, user_id, type, title, body, data (jsonb), read_at, created_at
+push_tokens: id, user_id, device_id, token, created_at
+outbox_events: id, aggregate_type, aggregate_id, event_type, payload (jsonb), status (NEW, PROCESSED, FAILED), attempts, next_attempt_at, created_at
+Qəbul meyarları
+☐ P2P köçürmədən sonra alanın telefonuna 2 saniyə ərzində push gəlir.
+☐ Push servisi əlçatmaz olduqda hadisə itmir, təkrar cəhd edilir.
+☐ "Bu mən deyiləm" düyməsi push-dan birbaşa kartı dondurur.
+5.12 Analitika
+Tələbə ayın xərclərini kateqoriyalar üzrə görür və hər kateqoriyaya büdcə qoyur. Analitika yalnız istifadəçinin özü üçündür; data heç kimə satılmır və paylaşılmır.
+Kateqoriyalar
+Kateqoriya
+Mənbə
+Yemək
+MCC 5812, 5814, 5411
+Nəqliyyat
+MCC 4111, 4121
+Təhsil
+MCC 5942, 8220, 8299
+Abunəliklər
+Kartla təkrarlanan (recurring) ödənişlər
+Əyləncə
+MCC 7832, 7922, 5815
+Köçürmələr
+P2P və kart köçürmələri (qeyddəki emoji ilə alt kateqoriya)
+Digər
+Qalan hamısı
+Funksiyalar
+Aylıq xülasə: cəmi xərc, kateqoriyalar üzrə bölgü (dairəvi diaqram), keçən ayla müqayisə.
+Büdcə: kateqoriyaya aylıq məbləğ; 80% və 100%-də bildiriş (BUDGET_ALERT).
+Əməliyyatın kateqoriyasını əl ilə dəyişmək.
+Texniki həll: outbox hadisələrindən yenilənən oxuma modeli (spending_daily); sorğular ledger-ə toxunmur.
+API
+Metod
+Yol
+Təsvir
+GET
+/api/v1/analytics/summary?month=2026-10
+Kateqoriyalar, cəmlər, müqayisə
+GET
+/api/v1/budgets
+Büdcələr və istifadə
+PUT
+/api/v1/budgets/{category}
+{limitMinor}
+PATCH
+/api/v1/transactions/{id}/category
+Kateqoriyanı dəyişmək
+DB
+spending_daily: user_id, date, category, amount_minor, count
+budgets: user_id, category, limit_minor, month
+mcc_categories: mcc, category
+Qəbul meyarları
+☐ Seed data ilə Oktyabr ayının xülasəsi kateqoriyalar üzrə düzgün cəmlənir.
+☐ Yemək büdcəsi 80%-ə çatanda bildiriş gəlir.
+6. Admin panel
+Admin panel demonun "arxa səhnəsi"dir: münsiflər burada sistemin real vaxtda işlədiyini, fraud-un tutulduğunu və Mərkəzi Bank qaydalarına əməl olunduğunu görür. Next.js-də qurulur, eyni API-dən istifadə edir.
+Rollar
+Rol
+Görür
+ADMIN
+Hər şey, feature flag-lar, sistem parametrləri
+COMPLIANCE
+Monitorinq, fraud növbəsi, compliance, KYC, mübahisələr, audit
+MERCHANT
+Yalnız öz kassası və tarixçəsi
+Admin sessiyası 30 dəqiqə aktivsizlikdən sonra bağlanır (GMA 2.2.5).
+Səhifələr
+Səhifə
+Məzmun
+Prioritet
+Monitorinq
+Canlı əməliyyat lenti, son 1 saatda TPS, həcm (AZN), uğur faizi, kanal üzrə bölgü (QR, P2P, AniPay, kart, kripto)
+Mütləq
+Fraud növbəsi
+HOLD_FOR_REVIEW halları, qaydalar, bal, Təsdiqlə / Rədd et; qaydaların açılıb-bağlanması
+Mütləq
+Compliance
+Gündəlik üzləşdirmə ("Ledger ↔ bank: uyğundur" + "İndi işə sal" düyməsi), qoruma invariantı, "Sonra ödə" portfeli / kapital (limit 10%), ümidsiz kreditlər (limit 1%), fraud dərəcələri və TRA statusu, aylıq hesabatların yüklənməsi
+Mütləq
+Kassa
+Rəqəm klaviaturası, dinamik QR, "Ödəniş alındı", günün tarixçəsi, geri qaytarma
+Mütləq
+Feature flag-lar
+crypto.enabled və digərləri; hər dəyişiklik audit-ə yazılır
+Mütləq
+KYC
+Qeydiyyatlar, liveness kadrları, uyğunluq balı, imzalanmış müqavilə
+Arzuolunan
+Mübahisələr
+"Bu mən deyiləm" halları, mock chargeback
+Arzuolunan
+İstifadəçilər
+Axtarış, balans, limitlər, bloklama
+Arzuolunan
+Audit
+Filtr: istifadəçi, əməliyyat növü, tarix
+Arzuolunan
+Sistem parametrləri
+Məcmu kapital, komissiyalar, limitlər
+Arzuolunan
+Real vaxt (WebSocket mövzuları)
+/topic/admin/transactions: hər tamamlanan əməliyyat.
+/topic/admin/fraud: yeni fraud halları.
+/topic/merchants/{merchantId}/payments: kassa.
+Compliance göstəriciləri (demo üçün ən vacib ekran)
+Göstərici
+Hədd
+Əsas
+Ledger ↔ bank çıxarışı
+Fərq 0
+Qayda 7.4–7.5
+"Sonra ödə" portfeli / məcmu kapital
+≤ 10%
+Qayda 9.1.4
+Ümidsiz + silinmiş kreditlər / kapital
+≤ 1%
+Qayda 9.1.5
+Fraud dərəcəsi (hər növ, hər məbləğ həddi)
+Əlavə 1
+GMA 4.4–4.5
+TRA istisnası
+Aktiv / dayandırılıb
+GMA 4.5
+API: admin səhifələri /api/v1/admin/... endpoint-lərindən istifadə edir (5.8, 5.9, 5.10-da verilib), əlavə olaraq:
+Metod
+Yol
+Təsvir
+GET
+/api/v1/admin/metrics/overview
+TPS, həcm, uğur faizi, kanal bölgüsü
+POST
+/api/v1/admin/reconciliation/run
+Üzləşdirməni indi işə sal
+GET
+/api/v1/admin/reconciliation/runs
+Nəticələr
+GET
+/api/v1/admin/audit
+Audit qeydləri
+PUT
+/api/v1/admin/system-params/{key}
+Parametr dəyişikliyi
+Qəbul meyarları
+☐ Mobil ödəniş edildikdə monitorinq lentində 1 saniyə ərzində görünür.
+☐ "İndi işə sal" üzləşdirmə nəticəsini göstərir.
+☐ Kapital parametri azaldılanda portfel göstəricisi qırmızıya keçir.
+☐ MERCHANT rolu yalnız öz kassasını görür.
+7. Xarici sistem mockları (kampus-sim)
+kampus-sim real tərəfdaşların davranışını təqlid edən ayrıca Spring Boot servisidir. Kampus onunla real inteqrasiya kimi danışır: HTTP sorğular, gecikmələr, asinxron webhook-lar və uğursuzluqlar. Hər mockun "uğursuzluq rejimi" var ki, demoda xəta ssenariləri göstərilsin.
+Ümumi qaydalar
+Kampus → sim: REST, X-Api-Key başlığı.
+Sim → Kampus: webhook, X-Sim-Signature (HMAC-SHA256, ortaq açar).
+Hər mockun gecikməsi və uğursuzluq ehtimalı /sim/admin səhifəsindən dəyişdirilir.
+Sim-in öz UI səhifələri (sadə HTML) demoda "xarici dünya" rolunu oynayır.
+Mocklar
+Mock
+Nəyi təqlid edir
+Kampusun çağırdığı
+Sim-in göndərdiyi webhook
+Uğursuzluq rejimi
+Dövlət reyestri
+FİN üzrə şəxs məlumatları və foto
+GET /registry/persons/{fin}
+—
+Reyestr əlçatmazdır
+Üz tutuşdurma
+Liveness kadrı ↔ reyestr fotosu
+POST /face-match → {score}
+—
+Aşağı bal
+SİMA İmza
+Müqavilənin gücləndirilmiş e-imza ilə imzalanması
+POST /sima/sign-requests
+sign.completed
+İmza rədd edildi
+SMS
+OTP və xidməti SMS-lər
+POST /sms
+—
+—
+Kart ekvayrinqi
+Top-up üçün kartdan çəkmə, 3DS
+POST /acquiring/sessions
+topup.completed
+3DS uğursuz
+Terminal şəbəkəsi
+Nağd pulla top-up
+—
+topup.completed
+—
+Açıq bankçılıq
+Bank seçimi, razılıq, hesabdan çəkmə
+POST /openbanking/consents
+topup.completed
+Razılıq rədd edildi
+Partnyor bank
+Müştəri vəsaitləri hesabı və gündəlik çıxarış
+GET /bank/statements/{date}
+—
+Çıxarışda fərq (üzləşdirmə xətası)
+AniPay / AÖS
+Telefon kataloqu, gedən və gələn köçürmələr
+GET /anipay/directory, POST /anipay/transfers
+anipay.settled, anipay.rejected, anipay.incoming
+Rədd edildi
+Kart şəbəkəsi (emissiya)
+Virtual kart yaradılması, avtorizasiya, klirinq
+POST /issuing/cards
+POST /internal/card-auth (sinxron), card.cleared, card.reversed
+Gecikmiş klirinq
+Kart şəbəkəsi (OCT)
+Kart nömrəsinə köçürmə, BIN, tokenizasiya
+POST /cards/sessions, POST /oct
+oct.approved, oct.declined
+Rədd, timeout
+VASP
+Kripto balansları, al/sat, depozit, AML
+POST /vasp/orders, GET /vasp/accounts/{id}
+vasp.deposit, vasp.confirmation, vasp.aml
+Satışdan sonra xəta
+Kredit partnyorları
+Mock BOKT A və Mock Bank B qərarları, ödəniş
+POST /lenders/applications
+loan.offer, loan.disbursed
+Partnyor cavab vermir
+Sim UI səhifələri (demo üçün)
+Səhifə
+Nə üçün
+/sim/terminal
+Terminal kodu + məbləğ daxil et → top-up
+/sim/merchant-simulator
+"Netflix 9.99 USD", "Cursor 20 USD", "Cursor 200 USD" düymələri → kart avtorizasiyası
+/sim/blockchain
+Depozit göndər, təsdiqləri izlə, "riskli ünvan" seçimi
+/sim/anipay
+Başqa bankdan Kampus istifadəçisinə köçürmə göndər
+/sim/admin
+Gecikmələr, uğursuzluq rejimləri, seed datanın sıfırlanması
+Sim seed datası
+Reyestr: 6 test şəxsi, o cümlədən 1 nəfər 17 yaşlı və 1 nəfər fotosu uyğun gəlməyən.
+BIN cədvəli: Azərbaycanın əsas bankları üçün mock BIN-lər, ad və loqo.
+AniPay kataloqu: 10 telefon nömrəsi, müxtəlif mock banklarda.
+Riskli kripto ünvanları: 5 "sanksiyalı" ünvan.
+Mock məzənnələr: USD/AZN, EUR/AZN, USDT, BTC.
+8. Demo ssenarisi və seed data
+Demo təxminən 7 dəqiqəlik bir hekayədir: tələbə hesab açır, ödəyir, köçürür, fırıldaqdan qorunur və bütün bunların arxasında admin paneldə qaydalara əməl olunduğu görünür. Vaxt az verilərsə, * ilə işarələnmiş addımlar çıxarılır.
+Avadanlıq
+Telefon A: "Aytən" (əsas istifadəçi), ekranı proyektora yayımlanır.
+Telefon B: "Murad" (dost), push bildirişlərini göstərmək üçün.
+Laptop: solda admin monitorinq/compliance, sağda kassa; ayrı tabda sim səhifələri.
+Ssenari
+#
+Addım
+Nə göstərilir
+Vaxt
+0
+Hekayə
+"Komandamızın üzvünün kartından 400 AZN getdi, bank kömək edə bilmədi"
+20 san
+1
+Qeydiyyat
+3 təsadüfi liveness hərəkəti, reyestr uyğunluğu, SİMA imza
+45 san
+2
+Top-up
+Terminal kodu → sim terminal səhifəsi → balans artır
+20 san
+3
+QR ödəniş
+Kassada 15 AZN QR → telefonla ödəniş → kassada "Ödəniş alındı"
+30 san
+4*
+Hesabı böl
+60 AZN 4 nəfərə; Murad-ın telefonuna sorğu gəlir, o ödəyir
+30 san
+5*
+P2P + geri al
+10 AZN Murad-a; ikinci köçürmədə "Ləğv et"
+20 san
+6*
+Karta köçürmə
+Kart nömrəsi yazılır → bank loqosu → "Çatdı"
+25 san
+7
+Cursor ssenarisi
+Kilidli kart, 20 USD keçir, 200 USD → "Siz idiniz?" → "Bu mən deyiləm" → kart dondurulur
+45 san
+8
+Fraud
+Qeyddə "uduş" → xəbərdarlıq; yeni cihazdan 300 AZN → admin növbəsi → rədd → pul geri
+40 san
+9
+Sonra ödə
+Balans çatmır, 12 AZN "Sonra ödə" ilə; admin-də portfel/kapital göstəricisi
+25 san
+10*
+Kredit təklifləri
+800 AZN: BOKT A təklif, Bank B rədd, faktiki illik faiz görünür
+30 san
+11
+Kripto (pilot)
+Admin flag-ı açır → USDT ilə QR ödəniş → kassa manat alır
+40 san
+12
+Compliance
+Üzləşdirmə "uyğundur", fraud dərəcəsi, TRA statusu, Qayda bəndləri
+30 san
+Seed data
+Data
+Məzmun
+Nə üçün
+İstifadəçilər
+Aytən, Murad, Leyla, Kamran (hamısı 18+); qeydiyyat demosu üçün təmiz telefon
+Köçürmələr, hesabı böl
+Satıcılar
+Kafe Xazar (5812), Kitab Evi (5942), Kampus Yeməkxanası (5814)
+QR, analitika
+Tarixçə
+Aytən üçün son 60 gündə ~80 əməliyyat
+Analitika, scoring, AMOUNT_SPIKE medianı
+Kart tarixçəsi
+Cursor-dan 3 ay ərzində hər ay 20 USD
+Anomaliya medianı
+"Sonra ödə" portfeli
+120 aktiv kredit, 2 ümidsiz
+Compliance göstəriciləri
+Fraud məlumatı
+Rüb üzrə həcmlər və 1 təsdiqlənmiş fraud
+Fraud dərəcəsi, TRA
+Sistem parametrləri
+Məcmu kapital 750 000 AZN
+Portfel limiti 75 000 AZN
+Sıfırlama: make demo-reset → Kampus DB-ni seed vəziyyətinə qaytarır (R__demo_seed.sql) və POST /sim/admin/reset çağırır. Hər məşqdən əvvəl işə salınır.
+Ehtiyat plan: demo videosu 2 gün əvvəl yazılır; internet problemi olarsa eyni Compose laptopda lokal işə salınır.
+9. İş bölgüsü və 7 günlük plan
+Backend, mobil və admin paralel işləyir; Gün 6-nın sonunda kod donur və Gün 7 yalnız məşq və deploy yoxlaması üçündür.
+
+7 günlük plan · 3 xətt, 1 donma nöqtəsi
+Mobil və admin backend hazır olana qədər OpenAPI əsasında mock server ilə işləyir, beləliklə heç bir xətt digərini gözləmir.
+İş qaydaları
+Gün 1: bütün API-lər üçün openapi.yaml yazılır (bölmə 5-dəki cədvəllərdən). Bu, üç xətt arasında müqavilədir.
+Prioritet: əvvəl demo ssenarisindəki (bölmə 8) ulduzsuz addımlar, sonra ulduzlu addımlar, sonra "Arzuolunan" funksiyalar.
+Gündəlik: 15 dəqiqəlik sinxronizasiya; bloklanan məsələ dərhal yazılır.
+Claude Code: hər modul üçün docs/spec/ qovluğundakı uyğun Markdown faylı tapşırıq kimi verilir; qəbul meyarları testlərə çevrilir.
+Gün 6: kod donur, ehtiyat demo videosu yazılır. Bundan sonra yalnız kritik xətalar düzəldilir.
+Gün 7: make demo-reset + tam demo 3 dəfə, vaxt ölçülür.
+10. Hüquqi uyğunluq xəritəsi
+Hər funksiya Mərkəzi Bankın konkret qaydasına bağlanır. Bu cədvəl pitch zamanı "Bu qanunidirmi?" sualına hazır cavabdır. Hüquqşünas rəyi deyil; son qərarlardan əvvəl yoxlatdırılmalıdır.
+Funksiya
+Sənəd
+Bənd
+Kampusda necə
+Məsafədən qeydiyyat
+Məsafədən hesabların açılması Qaydası (44/5)
+4.2, 5.4–5.8, 6.3
+Liveness 3 hərəkət, reyestrlə tutuşdurma, e-imza ilə müqavilə
+Yeni hesab limitləri
+Məsafədən hesabların açılması Qaydası
+3.3
+Qeydiyyatda göstərilir
+Yaş məhdudiyyəti
+Mülki Məcəllə
+28.2, 30
+Kredit və kripto 18+; Teen hesab sonra
+GMA elementləri, sessiya, cəhdlər
+GMA Qaydası
+2.1–2.3
+Cihaz açarı + Face ID, 5 dəq, 3 cəhd, dinamik bağlama
+Kiçik məbləğ istisnası
+GMA Qaydası
+3.9
+≤60 AZN, ≤5 ardıcıl, ≤300 AZN
+Etibar edilən şəxslər
+GMA Qaydası
+3.6–3.7
+Favoritlər, əlavə GMA ilə
+TRA və fraud dərəcəsi
+GMA Qaydası
+3.10, 4.1–4.5, Əlavə 1
+Fraud engine, avtomatik TRA dayandırma
+Fırıldaqçılığa qarşı siyasət
+Ödəniş və e-pul təşkilatları Qaydası
+7.1
+Fraud engine, 24/7 əlaqə, monitorinq
+Müştəri vəsaitlərinin uçotu
+Ödəniş və e-pul təşkilatları Qaydası
+7.3–7.5
+Ledger, gündəlik üzləşdirmə
+Komissiyaların ayrılması
+Ödəniş və e-pul təşkilatları Qaydası
+7.6
+Gündəlik köçürmə OWN_FUNDS_BANK-a
+Float investisiyası
+Ödəniş və e-pul təşkilatları Qaydası
+7.7
+Roadmap
+"Sonra ödə"
+Ödəniş və e-pul təşkilatları Qaydası
+9.1–9.3
+Compliance engine, öz vəsait, aylıq hesabat
+Valyuta konvertasiyası
+Ödəniş və e-pul təşkilatları Qaydası
+10.1–10.2
+Yalnız xarici ödəniş anında
+Ayrıca valyuta alqı-satqısı
+Valyuta tənzimi haqqında Qanun
+—
+Edilmir (yalnız banklar)
+E-pul təşkilatı kapitalı
+Ödəniş və e-pul təşkilatları Qaydası
+3.2
+750 000 AZN (biznes planı)
+QR ödəniş
+QR kod tələbləri
+—
+EMV® QR Code standartı
+Kripto
+Virtual aktivlər qanunu layihəsi
+—
+Flag OFF; qanundan sonra lisenziyalı VASP ilə
+Kredit partnyorları
+BOKT-larda kredit risklərinin idarə edilməsi Qaydası
+—
+Təklifdə faktiki illik faiz dərəcəsi
+Açıq suallar (Mərkəzi Bank mentorlarına)
+☐ E-pul təşkilatı AniPay-ə birbaşa qoşula bilərmi?
+☐ Kredit vasitəçiliyi ayrıca lisenziya tələb edirmi?
+☐ Ölkədaxili kart əməliyyatları üçün interchange-in yuxarı həddi nə qədərdir?
+☐ 16–17 yaşlılar üçün valideyn razılığı app daxilində alına bilərmi?
+Mənbələr
+Məsafədən hesabların açılması Qaydası (44/5, 16.12.2025)
+Gücləndirilmiş müştəri autentifikasiyasının tətbiqi Qaydası (12/2, 13.03.2024)
+Ödəniş və e-pul təşkilatları tərəfindən fəaliyyətin təşkili Qaydası (01/2, 10.01.2024, dəyişikliklərlə)
+QR kod vasitəsilə ödəniş əməliyyatlarına dair Tələblər
+Valyuta tənzimi haqqında Qanun
+Mülki Məcəllə
+BOKT-larda kredit risklərinin idarə edilməsi Qaydası

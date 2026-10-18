@@ -1,0 +1,189 @@
+Kampus — Komanda üçün brief
+Oct 16, 2026 · @Babayev Serxan
+Qısaca
+Kampus tələbələr üçün mobil cüzdandır: pul yükləmək, ödəmək, dostlara göndərmək, virtual kart və kiçik kredit bir tətbiqdə. Əsas fərqimiz: gündəlik ödəniş bir toxunuşla keçir, təhlükəsizlik isə yalnız risk olanda işə düşür.
+Kim üçün: 18 yaşdan yuxarı universitet tələbələri; ikinci tərəf kampus ətrafındakı kafe və mağazalar.
+Hansı problemi həll edir: tələbələrin çoxunun öz kartı və rəsmi gəliri yoxdur; saxlanmış kartla abunəlik fırıldaqları real pul itkisinə səbəb olur (komandamızın üzvü 400 AZN itirib); dostlar arasında hesab bölmək hələ də nağd pulla edilir.
+Demoda nə görünür: tələbə 2 dəqiqəyə hesab açır, kafedə QR ilə ödəyir, dostlarına hesabı bölür, Cursor-un 200 USD-lik çıxılması dayandırılır, admin paneldə isə hər şeyin Mərkəzi Bank qaydalarına uyğun işlədiyi görünür.
+Bu sənəd hər modulun nə etdiyini sadə dillə izah edir. Texniki detallar (API, DB, qəbul meyarları) "Kampus — Texniki Tapşırıq" sənədindədir.
+Bir baxışda
+Tətbiq 12 moduldan ibarətdir. Hər biri bir işə cavabdehdir; aşağıda hər birinin ayrıca izahı var.
+#
+Modul
+Bir cümlədə nə edir
+1
+Qeydiyyat və eKYC
+Telefon, ŞV və selfie ilə 2 dəqiqəyə hesab açır
+2
+Giriş və təhlükəsizlik
+Face ID ilə giriş; nə vaxt əlavə təsdiq lazım olduğuna qərar verir
+3
+Balans və top-up
+Kartdan, terminaldan və ya bankdan pul yükləmək, geri çıxarmaq
+4
+QR ödəniş
+Kafedə QR skan edib bir toxunuşla ödəmək
+5
+Pul göndər, istə, böl
+Telefon nömrəsi ilə köçürmə, pul istəmə, hesabı dostlara bölmə
+6
+Karta köçürmə
+İstənilən bankın kartına kart nömrəsi ilə pul göndərmək
+7
+Virtual kartlar
+Onlayn ödəniş üçün qaydaları özün qoyduğun kartlar
+8
+Fraud qoruması
+Şübhəli əməliyyatları tutur, xəbərdarlıq edir və ya saxlayır
+9
+Kredit
+50 AZN-dək "Sonra ödə" və partnyorlardan kredit təklifləri
+10
+Kripto (pilot)
+USDT ilə ödəniş; satıcı manat alır; hazırda söndürülüb
+11
+Bildirişlər və analitika
+Hər əməliyyat haqqında xəbər və xərclərin kateqoriyalar üzrə bölgüsü
+12
+Admin panel və kassa
+Monitorinq, fraud növbəsi, compliance və satıcının kassa ekranı
+1. Qeydiyyat və eKYC
+Yeni istifadəçi bank filialına getmədən, telefonundan 2–3 dəqiqəyə hesab açır.
+Nə edir
+Telefon nömrəsini SMS kodu ilə təsdiqləyir.
+FİN və ŞV seriyası ilə dövlət bazasından ad, doğum tarixi və fotonu alır (demoda mock).
+Canlılıq yoxlaması: kamera 3 təsadüfi hərəkət istəyir (başı çevir, göz qırp, gülümsə). Bu, kiminsə şəkil və ya video ilə aldatmasının qarşısını alır.
+Selfie-ni dövlət bazasındakı fotoyla tutuşdurur.
+Müqavilə SİMA İmza ilə imzalanır (demoda mock).
+18 yaşdan kiçikləri avtomatik rədd edir.
+Nümunə: Aytən FİN-ini yazır, kamerada başını sola çevirir, göz qırpır, gülümsəyir, SİMA ilə imzalayır və hesabı hazırdır.
+Niyə vacibdir: Mərkəzi Bankın məsafədən hesab açma qaydası məhz bu addımları tələb edir. Münsiflər bunu görəndə qaydanı bildiyimizi anlayacaq.
+2. Giriş və təhlükəsizlik (GMA)
+Bu modul tətbiqin "qapıçısı"dır: kimin girdiyini yoxlayır və hər ödənişdə əlavə təsdiq lazım olub-olmadığına qərar verir.
+Nə edir
+Telefon qeydiyyatda bağlanır; giriş Face ID və ya 6 rəqəmli PIN ilə olur.
+Tətbiq 5 dəqiqə istifadə olunmasa, kilidlənir.
+3 səhv PIN-dən sonra hesab 30 dəqiqəlik bloklanır.
+Ağıllı təsdiq: kiçik ödənişlər (60 AZN-dək) və "etibar edilən" dostlara köçürmələr əlavə təsdiqsiz keçir; böyük, yeni və ya şübhəli əməliyyatlarda Face ID tələb olunur.
+Təsdiq ekranında həmişə məbləğ və alan göstərilir; imza məhz bu məbləğə və alana bağlıdır, yolda dəyişdirilə bilməz.
+Nümunə: kafedə 15 AZN-lik ödəniş Face ID-siz keçir. Yeni adama 300 AZN göndəriləndə tətbiq Face ID istəyir.
+Niyə vacibdir: təhlükəsizlik istifadəçini yormur. Bu qaydalar Mərkəzi Bankın gücləndirilmiş autentifikasiya qaydasından götürülüb.
+3. Balans və top-up
+İstifadəçi Kampus balansına pul yükləyir və istədiyi vaxt geri çıxarır.
+Nə edir
+Kartla: istənilən bankın kartından (kart nömrəsi Kampusa gəlmir, təhlükəsiz formada daxil edilir).
+Terminalda nağd: tətbiq 8 rəqəmli kod verir, istifadəçi terminalda kodu yazıb nağd pul qoyur. Bank kartı olmayan tələbə üçündür.
+Bank hesabından: Mərkəzi Bankın açıq bankçılıq platforması üzərindən (demoda mock).
+Başqa bankdan AniPay ilə gələn köçürmələr də balansa düşür.
+Geri çıxarmaq: "Öz kartıma çıxar" düyməsi; ayda 500 AZN-dək pulsuz.
+Ana ekranda mövcud balans və son əməliyyatlar.
+Nümunə: Murad-ın bank kartı yoxdur. Terminalda kodu yazıb 20 AZN qoyur, balansı 2 saniyədə artır.
+Niyə vacibdir: bank kartı olmayan tələbə də Kampusdan tam istifadə edə bilir.
+4. QR ödəniş
+Tələbə satıcının QR kodunu skan edib ödəyir, satıcının ekranında 1 saniyəyə "Ödəniş alındı" çıxır.
+Nə edir
+Dinamik QR: satıcı kassada məbləği yazır, məbləğli QR yaranır (5 dəqiqə etibarlı, bir dəfə ödənir).
+Statik QR: masada çap olunmuş stiker; məbləği müştəri özü yazır.
+QR-lar beynəlxalq EMV QR standartındadır (Mərkəzi Bankın tələbi); zədələnmiş QR rədd edilir.
+Ödəniş mənbəyi seçilir: balans, "Sonra ödə" və ya kripto (aktivdirsə).
+Satıcı səhv ödənişi kassadan geri qaytara bilir.
+Ödənişdən sonra "Hesabı böl" düyməsi çıxır.
+Nümunə: Kafe Xazar-da kassir 15 AZN yazır, Aytən QR-ı skan edir, bir toxunuşla ödəyir, kassada yaşıl "Ödəniş alındı" görünür.
+Niyə vacibdir: satıcı üçün POS terminalı lazım deyil, telefon və ya çap olunmuş QR kifayətdir. Mərkəzi Bank kiçik bizneslər üçün QR ödənişini dəstəkləyir.
+5. Pul göndər, pul istə, hesabı böl
+Dostlar arasında pul hərəkəti: kart nömrəsi yox, telefon nömrəsi kifayətdir.
+Nə edir
+Pul göndər: alan Kampusdadırsa, pul dərhal çatır; deyilsə, AniPay ilə istənilən banka gedir (partnyor bank vasitəsilə).
+Alanın adını göstərir ("Sərxan B."), ki səhv adama getməsin.
+5 saniyəlik "Ləğv et": "Göndər" basandan sonra 5 saniyə ərzində fikrini dəyişə bilərsən.
+Pul istə: dosta sorğu göndərirsən, o bir toxunuşla ödəyir.
+Hesabı böl: kafe hesabını dostlar arasında bərabər və ya fərqli məbləğlərlə bölürsən; kimin ödədiyini izləyirsən ("3/4 ödəyib").
+Favoritlər, son alanlar, qeyd və emoji ("🍕 pizza").
+Nümunə: Aytən 60 AZN-lik pizza hesabını 4 nəfərə bölür. Murad-ın telefonuna "15 AZN istəyir: pizza" gəlir, o ödəyir və Aytən irəliləyişi görür.
+Niyə vacibdir: tələbələrin ən çox etdiyi gündəlik əməliyyatdır; bizi m10 kimi ümumi cüzdanlardan fərqləndirir.
+6. Kart nömrəsinə köçürmə
+İstənilən Azərbaycan bankının kartına 16 rəqəmli nömrə ilə pul göndərmək.
+Nə edir
+Kart nömrəsi yazılanda səhv nömrə dərhal tutulur və bankın adı ilə loqosu görünür.
+Kart nömrəsi Kampusda saxlanmır; yalnız təhlükəsiz kod (token) və son 4 rəqəm qalır.
+Pul əvvəl "dondurulur", bank təsdiq edəndən sonra çıxılır. Köçürmə alınmazsa, pul avtomatik balansa qayıdır.
+Kartları ləqəblə saxlamaq olar: "Anamın kartı ••1234".
+Komissiya göndərməzdən əvvəl göstərilir (başqasının kartına 0.5%).
+Nümunə: Aytən anasının kartına 20 AZN göndərir. Nömrəni yazanda bankın loqosu çıxır, 2 saniyədən sonra "Çatdı" görünür.
+Niyə vacibdir: alan Kampusda olmasa da, istənilən karta pul getməlidir. Pulun "itməməsi" (avtomatik qaytarma) etibar yaradır.
+7. Virtual kartlar
+Onlayn ödəniş üçün Visa/Mastercard kartları; hər kartın qaydalarını istifadəçi özü qoyur. Cursor hekayəsinin həlli buradadır.
+Nə edir
+3 növ kart: adi kart; bir satıcıya kilidli kart (məs. yalnız Cursor); birdəfəlik kart (bir ödənişdən sonra ölür).
+Limitlər: bir ödəniş və aylıq limit (məs. Cursor kartına ayda 20 USD).
+Dondur / aç, onlayn və xarici ödənişləri söndür.
+Anomaliya yoxlaması: satıcı həmişəkindən çox istəyəndə (20 USD əvəzinə 200 USD) ödəniş saxlanılır və telefona "Siz idiniz?" gəlir.
+"Bu mən deyiləm" düyməsi: kartı dərhal dondurur və mübahisə açır.
+Abunəliklər ekranı: kartdan müntəzəm pul çəkən bütün satıcılar və bir toxunuşla bloklama.
+Kart bankın lisenziyası ilə buraxılır (partnyor bank); demoda mock.
+Nümunə: Aytən Cursor üçün kilidli kart açır, limiti 20 USD qoyur. Ay sonu 20 USD keçir. Kimsə hesabı ələ keçirib 200 USD istəyəndə ödəniş rədd edilir.
+Niyə vacibdir: bu, pitch-in əsas hekayəsidir: "Bu sistem olsaydı, 400 AZN itirməzdik."
+8. Fraud qoruması
+Hər pul hərəkətindən əvvəl sistem onu yoxlayır və 0–100 arası "risk balı" verir. Bal nə qədər yüksəkdirsə, yoxlama o qədər sərt olur.
+Nə edir
+Aşağı risk: heç nə görünmür, ödəniş keçir.
+Orta risk: Face ID istənir.
+Yüksək risk: xəbərdarlıq ekranı ("Fırıldaqçılar belə pul istəyir, bu şəxsi tanıyırsınız?") + Face ID.
+Çox yüksək risk: pul saxlanılır, admin 30 dəqiqə ərzində yoxlayır.
+Nəyə baxır: yeni telefon, qısa vaxtda çoxlu köçürmə, ilk dəfə göndərilən böyük məbləğ, qeyddə "uduş", "depozit", "kredit" kimi sözlər, çox adamdan pul yığan yeni hesab, gecə saatlarında böyük məbləğ.
+Fırıldaq faizini hesablayır; faiz həddi aşarsa, "təsdiqsiz ödəniş" güzəşti avtomatik dayanır.
+Nümunə: kimsə Aytənə "uduş qazandınız, 250 AZN depozit göndərin" yazır. Aytən qeyddə "uduş" yazıb göndərəndə tətbiq xəbərdarlıq göstərir.
+Niyə vacibdir: Mərkəzi Bank fırıldaqla mübarizə və monitorinq tələb edir; bu modul həm də 2-ci moduldakı "ağıllı təsdiq"in beynidir.
+9. Kredit
+İki yol var: kiçik məbləğ üçün öz "Sonra ödə" xidmətimiz, böyük məbləğ üçün tərəfdaş BOKT və bankların təklifləri.
+Nə edir
+"Sonra ödə": 50 AZN-ə qədər alışı 30 və ya 60 gün sonra ödəmək. MVP-də faiz yoxdur, yalnız 18 yaşdan yuxarı istifadəçilər üçündür.
+"Sonra ödə"nin pulu yalnız tərəfdaş bankın öz kapitalından gəlir (müştərilərin cüzdandakı pulundan yox).
+Avtomatik yoxlama: limit, müddət, ümumi portfelin kapitalın 10%-indən çox olmaması.
+Kredit vitrini: "Mock BOKT A" və "Mock Bank B" təklifləri yan-yana: məbləğ, müddət, illik real faiz (APR), aylıq ödəniş.
+Razılıq: istifadəçi razılıq verdikdən sonra məlumatı tərəfdaşa gedir; müqavilə tərəfdaşla imzalanır, pul cüzdana düşür.
+Biz hər kreditdən tərəfdaşdan yönləndirmə haqqı alırıq; tələbədən faiz götürmürük.
+Nümunə: Rəşad 40 AZN-lik dərsliyi "Sonra ödə" ilə alır, 30 gün sonra balansından avtomatik ödənir. 800 AZN-lik noutbuk üçün vitrində iki təklifi müqayisə edib birini seçir.
+Niyə vacibdir: tələbələrin ən böyük ehtiyaclarından biridir; Qayda 9-a uyğun qurulduğu üçün hüquqi riski azdır.
+10. Kripto (pilot)
+Kripto ilə ödəniş imkanı. Defolt olaraq söndürülüb; admin paneldən bir düymə ilə açılır və hər yerdə "pilot" kimi göstərilir.
+Nə edir
+USDT ilə ödəmə: istifadəçi USDT ilə ödəyir, satıcı isə həmişə AZN alır. Satıcı kripto riski daşımır.
+30 saniyəlik məzənnə kilidi: göstərilən məzənnə 30 saniyə dəyişmir; vaxt bitsə, yeni məzənnə götürülür.
+AML yoxlaması: pulun gəldiyi kripto ünvan riskli siyahıdadırsa, əməliyyat dayanır.
+Depozit təsdiqi: kripto cüzdana düşəndə şəbəkə təsdiqləri gözlənilir, sonra balansa yazılır.
+Bütün kripto əməliyyatları lisenziyalı tərəfdaş (VASP) vasitəsilə gedəcək; demoda bu simulyatordur.
+Nümunə: Leyla kafedə QR-ı oxudur, "USDT ilə ödə" seçir, 5.90 USDT ödəyir; kafe 10 AZN alır.
+Niyə vacibdir: Mərkəzi Bank kripto tənzimləməsini sürətləndirir; biz hazır əsas qururuq, amma qayda qüvvəyə minənə qədər söndürülü saxlayırıq.
+11. Bildirişlər və analitika
+İstifadəçiyə nə baş verdiyini dərhal bildirir və pulunu harada xərclədiyini göstərir.
+Nə edir
+Bildirişlər: push, tətbiqdaxili və SMS. Balans və tarixçə ekranda canlı yenilənir.
+"Bu mən deyiləm" düyməsi: şübhəli əməliyyat bildirişinin üzərində; basılan kimi kartlar dondurulur və adminə müraciət açılır.
+Xərc kateqoriyaları: yemək, nəqliyyat, kitab, əyləncə və s. (satıcının növünə görə avtomatik).
+Büdcə: kateqoriyaya aylıq limit qoyulur; 80%-ə çatanda xəbərdarlıq gəlir.
+Nümunə: Nicat yeməyə ayına 150 AZN büdcə qoyub. 120 AZN xərcləyəndə "Büdcənin 80%-ini xərcləmisiniz" bildirişi gəlir.
+Niyə vacibdir: fırıldağı tez tutmağa kömək edir və tələbələrə pulunu idarə etməyi öyrədir.
+12. Admin panel və satıcı kassası
+Veb panel: komandamız sistemi idarə edir, satıcılar isə ödəniş qəbul edir. Demoda münsiflərə "arxa tərəfi" bununla göstərəcəyik.
+Nə edir
+Monitorinq: bütün əməliyyatların canlı lenti, günlük dövriyyə, aktiv istifadəçilər.
+Fraud növbəsi: saxlanılmış əməliyyatlar; admin "burax" və ya "rədd et" seçir.
+Uyğunluq: bankla günlük tutuşdurma, "Sonra ödə" portfelinin 10% limiti, fırıldaq faizləri.
+Satıcı kassası: satıcı məbləği yazır, ekranda dinamik QR çıxır, ödəniş gələn kimi yaşıl təsdiq görünür.
+Feature flag-lar: kripto kimi funksiyaları açıb-söndürmək.
+Rollar: ADMIN (hər şey), COMPLIANCE (uyğunluq və fraud), MERCHANT (yalnız öz kassası).
+Nümunə: demoda kafe kassasında 10 AZN yazılır, QR telefonla oxudulur; eyni anda admin paneldə əməliyyat canlı lentdə görünür.
+Niyə vacibdir: münsiflər yalnız tətbiqi yox, nəzarət və uyğunluğu da görmək istəyir; Mərkəzi Bank üçün bu əsas məqamdır.
+Arxa planda: ledger və simulyator
+İstifadəçi bunları görmür, amma bütün modullar bunların üstündə işləyir.
+Ledger (mühasibat kitabı)
+Hər pul hərəkəti iki dəfə yazılır: bir hesabdan çıxır, digərinə girir. Cəm həmişə sıfırdır, pul "yoxdan yaranmır" və "itmir".
+Balans birbaşa dəyişdirilmir, yazılışlardan hesablanır.
+Hər gün bizə olan pulla bankdakı qoruma hesabı tutuşdurulur.
+Eyni sorğu iki dəfə gəlsə (məs. internet kəsildi), pul iki dəfə çıxmır.
+Simulyator (kampus-sim)
+Bank, AniPay, kart şəbəkəsi, kripto tərəfdaşı (VASP), BOKT/bank, dövlət reyestri və SİMA-nı imitasiya edir.
+Demo real inteqrasiya olmadan tam işləyir; sonra hər biri real sistemi ilə əvəz oluna bilər.
+Admin paneldən sıradan çıxma (məs. "bank cavab vermir") yaradıb sistemin necə davrandığını göstərmək olar.
+Niyə vacibdir: pul səhvləri bizi biabr edə bilər; ledger bunun qarşısını alır. Simulyator isə 7 gündə tam işlək demo verməyi mümkün edir.

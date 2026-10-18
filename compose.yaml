@@ -1,0 +1,110 @@
+name: kampus
+x-logging: &logging
+ driver: json-file
+ options:
+  max-size: 10m
+  max-file: '3'
+services:
+ db:
+  image: postgres:17-alpine
+  environment:
+   POSTGRES_DB: kampus
+   POSTGRES_USER: kampus
+   POSTGRES_PASSWORD: ${DATABASE_PASSWORD:?Run scripts/deploy-init.py first}
+  volumes: [postgres_data:/var/lib/postgresql/data]
+  healthcheck:
+   test: [CMD-SHELL, 'pg_isready -U kampus -d kampus']
+   interval: 5s
+   timeout: 3s
+   retries: 20
+  restart: unless-stopped
+  logging: *logging
+ sim:
+  build:
+   context: .
+   dockerfile: services/sim/Dockerfile
+  environment:
+   SIM_KEY: ${SIM_KEY:?Run scripts/deploy-init.py first}
+   KAMPUS_STATE_FILE: /data/vasp-state.json
+   KAMPUS_CARD_STATE_FILE: /data/card-network.json
+  volumes: [sim_data:/data]
+  healthcheck:
+   test: [CMD, curl, -fsS, 'http://localhost:8081/health']
+   interval: 10s
+   timeout: 5s
+   retries: 12
+   start_period: 30s
+  restart: unless-stopped
+  logging: *logging
+ api:
+  build:
+   context: .
+   dockerfile: services/api/Dockerfile
+  environment:
+   DATABASE_URL: jdbc:postgresql://db:5432/kampus
+   DATABASE_USER: kampus
+   DATABASE_PASSWORD: ${DATABASE_PASSWORD:?Run scripts/deploy-init.py first}
+   SIM_URL: http://sim:8081
+   SIM_KEY: ${SIM_KEY:?Run scripts/deploy-init.py first}
+   DEPLOYED: 'true'
+   DEMO_PIN: ${DEMO_PIN:?Run scripts/deploy-init.py first}
+   ADMIN_PIN: ${ADMIN_PIN:?Run scripts/deploy-init.py first}
+   CORS_ORIGINS: ${CORS_ORIGINS:?Run scripts/deploy-init.py first}
+  depends_on:
+   db: {condition: service_healthy}
+   sim: {condition: service_healthy}
+  healthcheck:
+   test: [CMD, curl, -fsS, 'http://localhost:8080/api/v1/health/ready']
+   interval: 10s
+   timeout: 5s
+   retries: 12
+   start_period: 30s
+  restart: unless-stopped
+  logging: *logging
+ admin:
+  build:
+   context: .
+   dockerfile: apps/admin/Dockerfile
+  healthcheck:
+   test: [CMD, node, -e, "fetch('http://localhost:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+   interval: 10s
+   timeout: 5s
+   retries: 12
+   start_period: 20s
+  restart: unless-stopped
+  logging: *logging
+ mobile:
+  build:
+   context: .
+   dockerfile: apps/mobile/Dockerfile
+  healthcheck:
+   test: [CMD, wget, -q, --spider, 'http://127.0.0.1:8082/']
+   interval: 10s
+   timeout: 5s
+   retries: 12
+  restart: unless-stopped
+  logging: *logging
+ gateway:
+  image: caddy:2-alpine
+  environment:
+   APP_ADDRESS: ${APP_ADDRESS:?Run scripts/deploy-init.py first}
+   ADMIN_ADDRESS: ${ADMIN_ADDRESS:?Run scripts/deploy-init.py first}
+  ports:
+   - '${BIND_IP:-0.0.0.0}:${HTTP_PORT:-80}:80'
+   - '${BIND_IP:-0.0.0.0}:${HTTPS_PORT:-443}:443'
+   - '${BIND_IP:-0.0.0.0}:${LOCAL_ADMIN_PORT:-8088}:8088'
+  volumes:
+   - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+   - caddy_data:/data
+   - caddy_config:/config
+  depends_on:
+   api: {condition: service_healthy}
+   admin: {condition: service_healthy}
+   mobile: {condition: service_healthy}
+  restart: unless-stopped
+  logging: *logging
+volumes:
+ postgres_data:
+ sim_data:
+ caddy_data:
+ caddy_config:

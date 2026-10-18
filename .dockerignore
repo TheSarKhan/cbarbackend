@@ -1,0 +1,16 @@
+**/node_modules
+**/target
+**/.next
+**/.expo
+**/dist
+apps/mobile/android
+apps/mobile/ios
+.local
+artifacts
+.git
+**/.env*
+*.docx
+
+**/__pycache__
+**/*.pyc
+**/*.tsbuildinfo

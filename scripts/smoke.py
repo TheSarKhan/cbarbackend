@@ -1,0 +1,362 @@
+#!/usr/bin/env python3
+"""Run isolated integration checks against packaged API and simulator."""
+import socket, shutil, concurrent.futures, re, urllib.parse, hashlib, json, os, pathlib, subprocess, tempfile, time, unittest, urllib.error, urllib.request, uuid
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+BASE = 'http://127.0.0.1:18080/api/v1/'
+SIM_BASE = 'http://127.0.0.1:18081'
+class Client:
+    def __init__(self, phone, device='demo-device'):
+        self.device, self.token = device, ''
+        self.token = self.send('auth/login', {'phone':phone,'pin':'123456','deviceId':device})['accessToken']
+    def send(self,path,body=None,key=None,proof=None,status=200):
+        headers={'Content-Type':'application/json','Authorization':'Bearer '+self.token,'X-Device-Id':self.device,'Idempotency-Key':key or str(uuid.uuid4())}
+        if proof: headers['X-SCA-Proof']=proof
+        req=urllib.request.Request(BASE+path,data=json.dumps(body,ensure_ascii=False).encode() if body is not None else None,headers=headers)
+        try:
+            with urllib.request.urlopen(req,timeout=20) as r: code,result=r.status,json.load(r)
+        except urllib.error.HTTPError as e: code,result=e.code,json.load(e)
+        assert (code in status if isinstance(status,tuple) else code==status),(path,code,result)
+        return result
+    def sca(self,path,body):
+        return self.send('auth/sca',{'pin':'123456','payload':{'action':path,'data':body}})['proof']
+    def confirmed(self,path,body):
+        return self.send(path,body,proof=self.sca(path,body))
+    def balance(self): return self.send('wallet')['availableBalanceMinor']
+class Checks(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.a=Client('+994501000001');cls.b=Client('+994501000002');cls.admin=Client('+994501000005');cls.merchant=Client('+994501000007');cls.compliance=Client('+994501000006')
+    def test_01_auth_and_role_boundaries(self):
+        self.a.send('admin/overview',status=403)
+        self.merchant.send('admin/overview',status=403)
+        self.compliance.send('admin/feature-flags/crypto.enabled',{'value':True},status=403)
+        req=urllib.request.Request(BASE+'wallet')
+        with self.assertRaises(urllib.error.HTTPError) as e: urllib.request.urlopen(req)
+        self.assertEqual(e.exception.code,401)
+    def test_02_integer_amounts(self):
+        for a in (0,-5,1.5,100000001):
+            self.a.send('topups',{'amountMinor':a,'source':'CARD'},status=422 if isinstance(a,int) else 400)
+    def test_03_concurrent_idempotency(self):
+        before=self.a.balance();key=str(uuid.uuid4());body={'amountMinor':1234,'source':'CARD'}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+            replies=list(pool.map(lambda _:self.a.send('topups',body,key=key),range(6)))
+        self.assertEqual(len({r['id'] for r in replies}),1);self.assertEqual(self.a.balance(),before+1234)
+        self.a.send('topups',{'amountMinor':1235,'source':'CARD'},key=key,status=422)
+    def test_04_transfer_cancellation_and_completion(self):
+        before=self.a.balance();other=self.b.balance()
+        t=self.a.send('transfers',{'phone':'+994501000002','amountMinor':1000,'note':'pizza'})
+        self.assertEqual(self.a.balance(),before-1000)
+        self.b.send('transfers/'+t['id'],status=403)
+        self.a.send('transfers/'+t['id']+'/cancel',{})
+        self.assertEqual(self.a.balance(),before)
+        t=self.a.send('transfers',{'phone':'+994501000002','amountMinor':1000,'note':'pizza'})
+        time.sleep(5.7)
+        self.assertEqual(self.a.send('transfers/'+t['id'])['status'],'COMPLETED')
+        self.assertEqual(self.a.balance(),before-1000);self.assertEqual(self.b.balance(),other+1000)
+    def test_05_no_overspend(self):
+        available=self.b.balance();body={'phone':'+994501000001','amountMinor':6000,'note':'test'}
+        results=[]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+            for result in pool.map(lambda _:self.b.send('transfers',body,status=(200,422)),range(5)): results.append(result)
+        self.assertEqual(sum('id' in r for r in results),4)
+        self.assertEqual(sum(r.get('code')=='INSUFFICIENT_FUNDS' for r in results),1)
+        self.assertGreaterEqual(self.b.balance(),0)
+        for t in results:
+            if 'id' in t:self.b.send('transfers/'+t['id']+'/cancel',{})
+        self.assertEqual(self.b.balance(),available)
+    def test_06_qr_crc_replay_refund(self):
+        i=self.merchant.send('merchant/qr/dynamic',{'amountMinor':1500});p=i['qrPayload']
+        self.a.send('payments/qr/parse',{'qrPayload':p[:-1]+('0' if p[-1]!='0' else '1')},status=422)
+        before=self.a.balance();pay=self.a.send('payments/qr',{'qrPayload':p,'amountMinor':1500,'fundingSource':'WALLET'})
+        self.assertEqual(self.a.balance(),before-1500)
+        self.b.send('payments/qr',{'qrPayload':p,'amountMinor':1500,'fundingSource':'WALLET'},status=422)
+        self.merchant.send('merchant/payments/'+pay['id']+'/refund',{});self.assertEqual(self.a.balance(),before)
+    def test_07_sca_payload_binding_and_replay(self):
+        path='transfers';body={'phone':'+994501000002','amountMinor':7000,'note':'test'}
+        self.a.send(path,body,status=403);proof=self.a.sca(path,body)
+        self.a.send(path,{**body,'amountMinor':8000},proof=proof,status=422)
+        t=self.a.send(path,body,proof=proof)
+        self.a.send(path,body,proof=proof,status=422)
+        self.a.send('transfers/'+t['id']+'/cancel',{})
+    def test_08_fraud_hold_release(self):
+        new=Client('+994501000001','new-device-for-fraud');before=new.balance()
+        t=new.send('transfers',{'phone':'+994501000003','amountMinor':30000,'note':'test'})
+        self.assertEqual(t['status'],'UNDER_REVIEW');self.assertEqual(new.balance(),before-30000)
+        case=next(f for f in self.admin.send('admin/fraud/cases') if f['transferId']==t['id'])
+        self.admin.send('admin/fraud/cases/'+case['id']+'/reject',{});self.assertEqual(new.balance(),before)
+    def test_09_credit_consent_offers_disbursement(self):
+        body={'amountMinor':80000,'termMonths':12,'purpose':'Noutbuk','consent':True}
+        self.a.send('loan-applications',{**body,'consent':False},status=422)
+        app=self.a.send('loan-applications',body);offers=self.a.send('loan-applications/'+app['id']+'/offers')
+        self.assertEqual(len(offers),2);self.assertEqual(sum(o['approved'] for o in offers),1)
+        o=next(o for o in offers if o['approved']);before=self.a.balance()
+        path='loan-offers/'+o['id']+'/accept';self.a.confirmed(path,{})
+        self.assertEqual(self.a.balance(),before+80000)
+        schedule=self.a.send('partner-loans/'+self.a.send('dashboard')['partnerLoans'][0]['id']+'/schedule')
+        self.assertEqual(len(schedule),12);self.assertEqual(sum(i['amountMinor'] for i in schedule),o['totalPayableMinor'])
+        loan_id=self.a.send('dashboard')['partnerLoans'][0]['id']
+        self.a.confirmed('partner-loans/'+loan_id+'/installments/'+schedule[0]['id']+'/pay',{})
+        self.assertEqual(self.a.balance(),before+80000-schedule[0]['amountMinor'])
+        self.a.send(path,{},status=422)
+    def test_10_bnpl_limit_and_repayment(self):
+        i=self.merchant.send('merchant/qr/dynamic',{'amountMinor':4500})
+        self.a.confirmed('payments/qr',{'qrPayload':i['qrPayload'],'amountMinor':4500,'fundingSource':'BNPL'})
+        i=self.merchant.send('merchant/qr/dynamic',{'amountMinor':1000})
+        b={'qrPayload':i['qrPayload'],'amountMinor':1000,'fundingSource':'BNPL'}
+        self.a.send('payments/qr',b,proof=self.a.sca('payments/qr',b),status=422)
+        loan=next(l for l in self.a.send('bnpl/loans') if l['status']=='ACTIVE')
+        self.a.confirmed('bnpl/loans/'+loan['id']+'/repay',{})
+        self.assertEqual(self.a.send('bnpl/eligibility')['availableMinor'],5000)
+    def test_11_crypto_gate_trade_and_qr(self):
+        self.a.send('crypto/portfolio',status=403)
+        self.admin.send('admin/feature-flags/crypto.enabled',{'value':True})
+        initial=self.a.send('crypto/portfolio')['balanceMicro'];before=self.a.balance()
+        q=self.a.send('crypto/quotes',{'asset':'USDT','side':'BUY','amountMinor':1700})
+        self.a.confirmed('crypto/orders',{'quoteId':q['id'],'riskAccepted':True})
+        self.assertEqual(self.a.balance(),before-1700);self.assertEqual(self.a.send('crypto/portfolio')['balanceMicro'],initial+10000000)
+        self.a.send('crypto/orders',{'quoteId':q['id'],'riskAccepted':True},status=422)
+        i=self.merchant.send('merchant/qr/dynamic',{'amountMinor':1700})
+        self.a.confirmed('payments/qr',{'qrPayload':i['qrPayload'],'amountMinor':1700,'fundingSource':'CRYPTO','riskAccepted':True})
+        self.assertEqual(self.a.send('crypto/portfolio')['balanceMicro'],initial)
+    def test_11b_expired_crypto_quote(self):
+        before=self.a.balance()
+        q=self.a.send('crypto/quotes',{'asset':'USDT','side':'SELL','amountMinor':170})
+        time.sleep(30.2)
+        self.a.send('crypto/orders',{'quoteId':q['id'],'riskAccepted':True},status=422)
+        self.assertEqual(self.a.balance(),before)
+    def test_12_card_fraud_and_dispute(self):
+        r=self.admin.send('admin/sim/card-auth',{'cardId':'card-demo','merchantName':'Netflix','amountMinor':1700})
+        self.assertEqual(r['reasonCode'],'MERCHANT_MISMATCH')
+        r=self.admin.send('admin/sim/card-auth',{'cardId':'card-demo','merchantName':'Cursor','amountMinor':3400})
+        self.assertEqual(r['decision'],'APPROVED')
+        r=self.admin.send('admin/sim/card-auth',{'cardId':'card-demo','merchantName':'Cursor','amountMinor':34000})
+        self.assertEqual(r['reasonCode'],'CONFIRMATION_REQUIRED')
+        self.a.send('disputes',{'cardId':'card-demo','reason':'Bu mən deyiləm'})
+        self.assertEqual(self.a.send('cards')[0]['status'],'FROZEN')
+    def test_13_reconciliation(self):
+        r=self.admin.send('admin/reconciliation/run',{})
+        self.assertEqual(r['status'],'MATCHED');self.assertEqual(r['differenceMinor'],0)
+    def test_13b_split_progress_and_requests(self):
+        split=self.a.send('splits',{'totalMinor':6000,'mode':'EQUAL','note':'pizza','participants':[{'phone':'+994501000002'},{'phone':'+994501000003'}]})
+        view=self.a.send('splits/'+split['id'])
+        self.assertEqual(view['paidMinor'],2000);self.assertEqual(view['paidCount'],1)
+        self.b.send('splits/'+split['id'],status=403)
+        req=next(r for r in self.b.send('payment-requests') if r.get('splitId')==split['id'])
+        self.b.confirmed('payment-requests/'+req['id']+'/pay',{})
+        view=self.a.send('splits/'+split['id'])
+        self.assertEqual(view['paidMinor'],4000);self.assertEqual(view['paidCount'],2)
+    def demo_card(self,pan):
+        session=self.a.send('card-transfers/card-session',{})
+        self.b.send('card-sessions/'+session['id'],status=403)
+        form_url=SIM_BASE+session['formPath']
+        html=urllib.request.urlopen(form_url).read().decode()
+        nonce=re.search(r'name="nonce" value="([^"]+)"',html).group(1)
+        invalid=urllib.request.Request(form_url,data=urllib.parse.urlencode({'pan':'4242424242424241','nonce':nonce}).encode())
+        with self.assertRaises(urllib.error.HTTPError) as error:urllib.request.urlopen(invalid)
+        self.assertEqual(error.exception.code,422)
+        req=urllib.request.Request(form_url,data=urllib.parse.urlencode({'pan':pan,'nonce':nonce}).encode())
+        with urllib.request.urlopen(req) as reply:self.assertEqual(reply.status,200)
+        card=self.a.send('card-sessions/'+session['id'])
+        self.assertNotIn(pan,json.dumps(card))
+        self.assertEqual(card['last4'],pan[-4:])
+        return session
+    def wait_card(self,id,status):
+        for _ in range(80):
+            t=self.a.send('card-transfers/'+id)
+            if t['status']==status:return t
+            time.sleep(.15)
+        self.fail('Card transfer did not reach '+status+': '+str(t))
+    def test_15_card_transfer_approval_and_fee(self):
+        session=self.demo_card('4242424242424242')
+        quote=self.a.send('card-transfers/fee-quote',{'sessionId':session['id'],'amountMinor':2000})
+        self.assertEqual(quote['feeMinor'],30);self.assertEqual(quote['totalMinor'],2030)
+        body={'quoteId':quote['id'],'amountMinor':2000}
+        self.a.send('card-transfers',{**body,'pan':'4242424242424242'},status=422)
+        self.a.send('card-transfers',body,status=403)
+        self.a.send('card-transfers',{**body,'amountMinor':2100},status=422)
+        before=self.a.balance();key=str(uuid.uuid4());proof=self.a.sca('card-transfers',body)
+        t=self.a.send('card-transfers',body,key=key,proof=proof)
+        again=self.a.send('card-transfers',body,key=key,proof=proof)
+        self.assertEqual(t['id'],again['id']);self.assertEqual(self.a.balance(),before-2030)
+        done=self.wait_card(t['id'],'COMPLETED')
+        self.assertEqual(self.a.balance(),before-2030);self.assertNotIn('cardToken',done)
+        self.a.send('card-transfers',body,status=422)
+        self.assertEqual(self.admin.send('admin/reconciliation/run',{})['differenceMinor'],0)
+    def test_16_card_transfer_decline_releases_hold(self):
+        session=self.demo_card('4000000000000002')
+        q=self.a.send('card-transfers/fee-quote',{'sessionId':session['id'],'amountMinor':1000})
+        before=self.a.balance();t=self.a.confirmed('card-transfers',{'quoteId':q['id'],'amountMinor':1000})
+        self.assertEqual(self.a.balance(),before-1030)
+        self.wait_card(t['id'],'FAILED');self.assertEqual(self.a.balance(),before)
+    def test_17_card_transfer_unknown_is_not_refunded_early(self):
+        session=self.demo_card('4000000000009995')
+        q=self.a.send('card-transfers/fee-quote',{'sessionId':session['id'],'amountMinor':1500})
+        before=self.a.balance();t=self.a.confirmed('card-transfers',{'quoteId':q['id'],'amountMinor':1500})
+        self.wait_card(t['id'],'UNDER_REVIEW')
+        self.assertEqual(self.a.balance(),before-1530)
+        path='admin/card-transfers/'+t['id']+'/resolve'
+        self.compliance.send(path,{'decision':'DECLINED'},status=403)
+        self.admin.send(path,{'decision':'DECLINED'})
+        self.wait_card(t['id'],'FAILED');self.assertEqual(self.a.balance(),before)
+    def test_18_card_transfer_saved_card_and_own_withdrawal(self):
+        session=self.demo_card('4169738855551234')
+        q=self.a.send('card-transfers/fee-quote',{'sessionId':session['id'],'amountMinor':1000,'purpose':'SEND'})
+        self.assertEqual(q['bankName'],'Kapital Bank');self.assertEqual(q['brand'],'VISA');self.assertEqual(q['feeMinor'],30)
+        t=self.a.confirmed('card-transfers',{'quoteId':q['id'],'amountMinor':1000,'saveAs':'Kapital Maaş'})
+        self.wait_card(t['id'],'COMPLETED')
+        cards=self.a.send('recipient-cards')
+        saved=next(c for c in cards if c['last4']=='1234')
+        self.assertEqual(saved['nickname'],'Kapital Maaş')
+        q_own=self.a.send('card-transfers/fee-quote',{'cardId':saved['id'],'amountMinor':1200,'purpose':'WITHDRAW_OWN'})
+        self.assertEqual(q_own['feeMinor'],0);self.assertEqual(q_own['totalMinor'],1200)
+        before=self.a.balance()
+        t_own=self.a.confirmed('card-transfers',{'quoteId':q_own['id'],'amountMinor':1200})
+        self.wait_card(t_own['id'],'COMPLETED');self.assertEqual(self.a.balance(),before-1200)
+        self.a.send('recipient-cards/'+saved['id']+'/delete',{})
+        self.assertEqual(self.admin.send('admin/reconciliation/run',{})['differenceMinor'],0)
+    def test_19_ekyc_fin_liveness_sima_and_rejections(self):
+        otp=self.a.send('auth/otp',{'phone':'+994509998877'})
+        self.assertEqual(len(otp['livenessActions']),3)
+        base_reg={'otpId':otp['otpId'],'otp':otp['demoCode'],'name':'Elvin Kərimov','birthDate':'2002-05-10','pin':'123456','deviceId':'demo-device','termsAccepted':True,'dataConsent':True}
+        self.a.send('auth/register',{**base_reg,'fin':'7AZ5544'},status=422)
+        self.a.send('auth/register',{**base_reg,'fin':'17YASLI','facesCount':1,'simaSigned':True},status=422)
+        self.a.send('auth/register',{**base_reg,'fin':'LOWFACE','facesCount':1,'simaSigned':True},status=422)
+        self.a.send('auth/register',{**base_reg,'fin':'7AZ5544','facesCount':2,'simaSigned':True},status=422)
+        self.a.send('auth/register',{**base_reg,'fin':'7AZ5544','facesCount':1,'simaSigned':False},status=422)
+        reg=self.a.send('auth/register',{**base_reg,'fin':'7AZ5544','facesCount':1,'simaSigned':True})
+        self.assertIn('accessToken',reg)
+        ov=self.admin.send('admin/overview')
+        self.assertTrue(any(k.get('fin')=='7AZ5544' and k.get('status')=='DEMO_VERIFIED' and k.get('liveness')=='DEMO_SIMULATED' and k.get('mediaStored') is False for k in ov['kycRecords']))
+    def test_20_terminal_code_trusted_beneficiaries_and_hashed_contacts(self):
+        before=self.a.balance()
+        tc=self.a.send('topups/terminal-code',{'amountMinor':1500})
+        self.assertEqual(len(tc['code']),8)
+        self.a.send('topups/terminal-redeem',{'code':tc['code']})
+        self.assertEqual(self.a.balance(),before+1500)
+        self.a.send('topups/terminal-redeem',{'code':tc['code']},status=422)
+        matched=self.a.send('contacts/match',{'phoneHashes':[hashlib.sha256(p.encode()).hexdigest() for p in ['+994501000002','+994509990000']]})
+        self.assertTrue(any(m['phone']=='+994501000002' and len(m['phoneHash'])==64 for m in matched['matches']))
+        tb=self.a.confirmed('trusted-beneficiaries',{'phone':'+994501000003','nickname':'Leyla'})
+        t=self.a.send('transfers',{'phone':'+994501000003','amountMinor':7000,'note':'Etibarlı alıcıya'})
+        self.assertTrue(t['trustedBeneficiary'])
+        self.a.send('transfers/'+t['id']+'/cancel',{})
+        self.a.send('trusted-beneficiaries/'+tb['id']+'/delete',{})
+    def test_21_virtual_card_controls_reveal_blocked_merchant_and_anomaly_confirm(self):
+        self.a.send('cards/card-demo/unfreeze',{})
+        rev=self.a.confirmed('cards/card-demo/reveal',{'cardId':'card-demo'})
+        self.assertEqual(len(rev['pan']),16);self.assertEqual(rev['pan'][-4:],'2048')
+        self.a.send('cards/card-demo/blocked-merchants',{'merchantName':'Cursor'})
+        blocked_auth=self.admin.send('admin/sim/card-auth',{'cardId':'card-demo','merchantName':'Cursor','amountMinor':500})
+        self.assertEqual(blocked_auth['reasonCode'],'MERCHANT_BLOCKED')
+        self.a.send('cards/card-demo/blocked-merchants',{'merchantName':'Cursor'})
+        self.a.send('cards/card-demo/controls',{'monthlyLimitMinor':20000,'ecommerceEnabled':True})
+        anom=self.admin.send('admin/sim/card-auth',{'cardId':'card-demo','merchantName':'Cursor','amountMinor':12000})
+        self.assertEqual(anom['reasonCode'],'CONFIRMATION_REQUIRED')
+        self.a.send('card-auth/'+anom['id']+'/confirm',{'amountMinor':13000},status=422)
+        self.a.send('card-auth/'+anom['id']+'/confirm',{},status=403)
+        self.a.confirmed('card-auth/'+anom['id']+'/confirm',{})
+        mismatch=self.admin.send('admin/sim/card-auth',{'cardId':'card-demo','merchantName':'Cursor','amountMinor':13000})
+        self.assertEqual(mismatch['reasonCode'],'CONFIRMATION_REQUIRED')
+        ok_auth=self.admin.send('admin/sim/card-auth',{'cardId':'card-demo','merchantName':'Cursor','amountMinor':12000})
+        self.assertEqual(ok_auth['decision'],'APPROVED')
+        ov=self.admin.send('admin/overview')
+        open_disp=next((d for d in ov['disputes'] if d['status']=='OPEN'),None)
+        if open_disp:
+            res=self.admin.send('admin/disputes/'+open_disp['id']+'/resolve',{'status':'RESOLVED','resolutionNote':'Yoxlanıldı'})
+            self.assertEqual(res['status'],'RESOLVED')
+        self.admin.send('admin/fraud/blacklist',{'target':'+994557776655','reason':'Mule test'})
+        before=self.a.balance()
+        self.a.send('transfers',{'phone':'+994557776655','amountMinor':500,'note':'Test'},status=403)
+        self.assertEqual(self.a.balance(),before)
+    def test_22_crypto_deposit_aml_withdrawal_and_budget_alerts(self):
+        self.admin.send('admin/feature-flags/crypto.enabled',{'value':True})
+        addr=self.a.send('crypto/deposit-address')
+        self.assertTrue(addr['address'].startswith('TKampus'))
+        dep_ok=self.a.send('crypto/deposits',{'amountMicro':15000000,'fromAddress':'T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb'})
+        self.assertEqual(dep_ok['amlStatus'],'CREDITED')
+        dep_aml=self.a.send('crypto/deposits',{'amountMicro':20000000,'fromAddress':'TBLACKLIST999SANCTION'})
+        self.assertEqual(dep_aml['amlStatus'],'FROZEN_FOR_AML')
+        wd=self.a.confirmed('crypto/withdrawals',{'amountMicro':5000000,'toAddress':'TN3W4H6rK2ce4vX9YnFQHwKENnHjoxb3m9','beneficiaryName':'Murad Əliyev'})
+        self.assertEqual(wd['amlStatus'],'COMPLETED')
+        sp=self.a.send('splits',{'totalMinor':3000,'mode':'CUSTOM','participants':[{'phone':'+994501000002','amountMinor':1200}],'note':'Xüsusi hesab'})
+        self.assertEqual(sp['organizerShareMinor'],1800)
+        self.a.send('budgets',{'category':'Nəqliyyat','limitMinor':1000})
+        txs=self.a.send('transactions')
+        out_tx=next(t for t in txs if t['direction']=='OUT')
+        updated=self.a.send('transactions/'+out_tx['id']+'/category',{'category':'Nəqliyyat'})
+        self.assertEqual(updated['category'],'Nəqliyyat')
+        self.assertEqual(self.admin.send('admin/reconciliation/run',{})['differenceMinor'],0)
+    def test_23_contacts_do_not_enumerate_users(self):
+        self.assertEqual(self.a.send('contacts/match',{'phoneHashes':[]})['matches'],[])
+        self.a.send('contacts/match',{},status=422)
+        self.a.send('contacts/match',{'phones':['+994501000002']},status=422)
+        self.a.send('contacts/match',{'phoneHashes':['not-a-hash']},status=422)
+    def test_24_card_reveal_cannot_be_replayed(self):
+        path='cards/card-demo/reveal';body={'cardId':'card-demo'}
+        key=str(uuid.uuid4());proof=self.a.sca(path,body)
+        result=self.a.send(path,body,key=key,proof=proof)
+        self.assertEqual(len(result['pan']),16)
+        replay=self.a.send(path,body,key=key,proof=proof,status=410)
+        self.assertEqual(replay['code'],'SENSITIVE_REPLAY_EXPIRED')
+    def test_25_bitcoin_preview_cannot_bypass_crypto_gate(self):
+        self.admin.send('admin/feature-flags/crypto.enabled',{'value':False})
+        before=self.a.balance()
+        self.a.send('topups',{'source':'BITCOIN','amountMinor':1000},status=422)
+        self.a.send('crypto/portfolio',status=403)
+        self.assertEqual(self.a.balance(),before)
+        self.admin.send('admin/feature-flags/crypto.enabled',{'value':True})
+    def test_26_logout_revokes_session(self):
+        client=Client('+994501000002','logout-device')
+        client.send('auth/logout',{})
+        client.send('wallet',status=401)
+    def test_27_new_account_is_not_automatically_bnpl_eligible(self):
+        self.assertIn('recentIncomingCount',self.a.send('bnpl/eligibility'))
+        self.assertTrue(self.a.send('health/ready')['database']=='UP')
+    def test_28_provider_retries_do_not_duplicate_crypto(self):
+        def provider(path,body):
+            req=urllib.request.Request(SIM_BASE+path,data=json.dumps(body).encode(),headers={'Content-Type':'application/json','X-Api-Key':'kampus-local-simulator-key'})
+            with urllib.request.urlopen(req,timeout=10) as r:return json.load(r)
+        uid='provider-retry-'+str(uuid.uuid4())
+        initial=provider('/vasp/portfolio',{'userId':uid})['balanceMicro']
+        deposit={'userId':uid,'operationId':str(uuid.uuid4()),'amountMicro':1000000,'fromAddress':'TDEMO'}
+        first=provider('/vasp/deposit',deposit);second=provider('/vasp/deposit',deposit)
+        self.assertEqual(first,second)
+        with self.assertRaises(urllib.error.HTTPError) as conflict:provider('/vasp/deposit',{**deposit,'amountMicro':2000000})
+        self.assertEqual(conflict.exception.code,409)
+        self.assertEqual(provider('/vasp/portfolio',{'userId':uid})['balanceMicro'],initial+1000000)
+        withdrawal={'userId':uid,'operationId':str(uuid.uuid4()),'amountMicro':1000000,'toAddress':'TDEMO','beneficiaryName':'Demo'}
+        self.assertEqual(provider('/vasp/withdraw',withdrawal),provider('/vasp/withdraw',withdrawal))
+        self.assertEqual(provider('/vasp/portfolio',{'userId':uid})['balanceMicro'],initial)
+    def test_14_pin_lockout(self):
+        for _ in range(3):
+            self.a.send('auth/login',{'phone':'+994501000004','pin':'000000','deviceId':'demo-device'},status=401)
+        self.a.send('auth/login',{'phone':'+994501000004','pin':'123456','deviceId':'demo-device'},status=423)
+
+def wait(url):
+    for _ in range(150):
+        try:
+            with urllib.request.urlopen(url,timeout=1):return
+        except Exception:time.sleep(.2)
+    raise RuntimeError('Service did not start: '+url)
+if __name__=='__main__':
+    with socket.socket() as api_socket,socket.socket() as sim_socket:
+        api_socket.bind(('127.0.0.1',0));sim_socket.bind(('127.0.0.1',0))
+        api_port=api_socket.getsockname()[1];sim_port=sim_socket.getsockname()[1]
+    BASE=f'http://127.0.0.1:{api_port}/api/v1/'
+    SIM_BASE=f'http://127.0.0.1:{sim_port}'
+    with tempfile.TemporaryDirectory(prefix='kampus-tests-') as tmp:
+        api_jar=pathlib.Path(tmp)/'api.jar';sim_jar=pathlib.Path(tmp)/'sim.jar'
+        shutil.copy2(ROOT/'services/api/target/kampus-api-0.1.0.jar',api_jar)
+        shutil.copy2(ROOT/'services/sim/target/kampus-sim-0.1.0.jar',sim_jar)
+        env={**os.environ,'DATABASE_URL':'jdbc:h2:mem:kampus_test;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1','SIM_URL':SIM_BASE,'PORT':str(api_port)}
+        logs=open(pathlib.Path(tmp)/'services.log','w')
+        sim=subprocess.Popen(['java','-jar',str(sim_jar),'--server.port='+str(sim_port)],cwd=tmp,env=env,stdout=logs,stderr=logs)
+        api=subprocess.Popen(['java','-jar',str(api_jar),'--kampus.oct-review-after-ms=2500'],cwd=tmp,env=env,stdout=logs,stderr=logs)
+        try:
+            wait(SIM_BASE+'/health');wait(BASE+'health');time.sleep(.7)
+            result=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(Checks))
+            if not result.wasSuccessful():
+                logs.flush();print((pathlib.Path(tmp)/'services.log').read_text()[-5000:])
+            raise SystemExit(not result.wasSuccessful())
+        finally:
+            api.terminate();sim.terminate();api.wait(timeout=10);sim.wait(timeout=10);logs.close()
