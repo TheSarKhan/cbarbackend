@@ -1,0 +1,15 @@
+# Installed at /opt/cbar/compose.ci.yaml by the CI server bootstrap.
+# Releases are built first, then only their pinned service images are changed.
+services:
+ api:
+  build: !reset null
+  image: kampus-api:${BACKEND_REV:-bootstrap}
+ sim:
+  build: !reset null
+  image: kampus-sim:${BACKEND_REV:-bootstrap}
+ admin:
+  build: !reset null
+  image: kampus-admin:${FRONTEND_REV:-bootstrap}
+ mobile:
+  build: !reset null
+  image: kampus-mobile:${MOBILE_REV:-bootstrap}

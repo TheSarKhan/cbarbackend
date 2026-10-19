@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+# Root-owned forced SSH command. Deploy keys cannot open a shell or select paths.
+set -euo pipefail
+umask 077
+component="${1:-}"
+case "$component" in frontend|backend|mobile) ;; *) exit 64;; esac
+original="${SSH_ORIGINAL_COMMAND:-}"
+[[ "$original" =~ ^deploy\ ([0-9a-f]{40})$ ]] || { echo 'Only deploy <commit-sha> is permitted.'; exit 64; }
+revision="${BASH_REMATCH[1]}"
+root=/opt/cbar
+cd "$root"
+exec 9>"$root/.ci/deploy.lock"
+flock -w 1800 9
+release="$root/.ci/releases/$component/$revision"
+# A run may retry the same commit; never mutate a previously accepted context.
+release="$(mktemp -d "$release.XXXXXX")"
+head -c 104857601 > "$release/input.tar.gz"
+[[ $(stat -c %s "$release/input.tar.gz") -le 104857600 ]] || { echo 'Release exceeds 100 MiB'; exit 65; }
+python3 - "$release" "$component" <<'PY'
+import sys,tarfile,pathlib
+folder=pathlib.Path(sys.argv[1]);component=sys.argv[2]
+with tarfile.open(folder/'input.tar.gz','r:gz') as archive:
+ members=archive.getmembers()
+ if len(members)>10000 or sum(m.size for m in members)>209715200:raise SystemExit('Expanded release is too large')
+ for item in members:
+  p=pathlib.PurePosixPath(item.name)
+  if p.is_absolute() or '..' in p.parts or not p.parts or p.parts[0] not in ('source','artifacts'):
+   raise SystemExit('Invalid archive path')
+  if not (item.isfile() or item.isdir()):raise SystemExit('Archive links/devices are forbidden')
+  if p.parts[0]=='artifacts' and (component!='mobile' or item.name not in ('artifacts','artifacts/kampus.apk','artifacts/kampus.apk.sha256')):
+   raise SystemExit('Unexpected release artifact')
+ archive.extractall(folder,filter='data')
+PY
+[[ -d "$release/source" ]] || exit 65
+if [[ "$component" == mobile ]]; then
+ (cd "$release/artifacts" && sha256sum -c kampus.apk.sha256)
+fi
+stamp=$(date -u +%Y%m%dT%H%M%SZ)
+backup="$root/.ci/backups/$stamp-$component-$revision"
+mkdir -p "$backup"
+cp -p .env "$backup/deploy.env"
+case "$component" in
+ frontend) services=(admin); variable=FRONTEND_REV; docker build -t "kampus-admin:$revision" "$release/source";;
+ mobile) services=(mobile); variable=MOBILE_REV; docker build -t "kampus-mobile:$revision" "$release/source";;
+ backend)
+  services=(sim api); variable=BACKEND_REV
+  docker build -t "kampus-sim:$revision" -f "$release/source/services/sim/Dockerfile" "$release/source"
+  docker build -t "kampus-api:$revision" -f "$release/source/services/api/Dockerfile" "$release/source"
+  ;;
+esac
+rollback="$backup/rollback.json"
+python3 - "$rollback" "${services[@]}" <<'PY'
+import json,subprocess,sys
+images={}
+for service in sys.argv[2:]:
+ current=subprocess.check_output(['docker','inspect','--format','{{.Image}}','kampus-'+service+'-1'],text=True).strip()
+ images[service]={'image':current}
+open(sys.argv[1],'w').write(json.dumps({'services':images}))
+PY
+# Production Compose is owned by the bootstrap, never copied from a release.
+compose=(docker compose -p kampus -f "$root/compose.yaml" -f "$root/compose.ci.yaml")
+started=false
+rollback_on_error(){
+ status=$?
+ if [[ $status != 0 && "$started" == true ]]; then
+  echo 'Deployment failed; restoring previous service images.'
+  cp -p "$backup/deploy.env" "$root/.env"
+  "${compose[@]}" -f "$rollback" up -d --no-deps --no-build --wait --wait-timeout 180 "${services[@]}" || true
+  # No automatic database restore: migrations must be backward compatible.
+  # A consistent pre-deploy dump is retained for an explicit recovery.
+  echo "Rollback snapshot: $backup"
+ fi
+ exit "$status"
+}
+trap rollback_on_error EXIT
+if [[ "$component" == backend ]]; then
+ started=true
+ "${compose[@]}" stop api sim
+ "${compose[@]}" exec -T db pg_dump -U kampus -d kampus -Fc > "$backup/postgres.dump"
+ "${compose[@]}" cp sim:/data "$backup/sim"
+fi
+export "$variable=$revision"
+started=true
+if [[ "$component" == backend ]]; then
+ "${compose[@]}" up -d --no-deps --no-build --wait --wait-timeout 180 sim
+ "${compose[@]}" up -d --no-deps --no-build --wait --wait-timeout 180 api
+else
+ "${compose[@]}" up -d --no-deps --no-build --wait --wait-timeout 240 "${services[@]}"
+fi
+python3 "$root/.ci/health.py"
+# Commit the new revision only after health checks. Other component pins survive.
+python3 - "$root/.env" "$variable" "$revision" <<'PY'
+from pathlib import Path
+import os,sys
+p=Path(sys.argv[1]);key=sys.argv[2];value=sys.argv[3]
+lines=p.read_text().splitlines();found=False
+for i,line in enumerate(lines):
+ if line.startswith(key+'='):lines[i]=key+'='+value;found=True
+if not found:lines.append(key+'='+value)
+tmp=p.with_suffix('.ci-tmp');tmp.write_text('\n'.join(lines)+'\n');tmp.chmod(0o600);os.replace(tmp,p)
+PY
+if [[ "$component" == mobile ]]; then
+ install -m 644 "$release/artifacts/kampus.apk" "$root/downloads/kampus.apk.new"
+ install -m 644 "$release/artifacts/kampus.apk.sha256" "$root/downloads/kampus.apk.sha256.new"
+ mv "$root/downloads/kampus.apk.new" "$root/downloads/kampus.apk"
+ mv "$root/downloads/kampus.apk.sha256.new" "$root/downloads/kampus.apk.sha256"
+fi
+printf '%s %s %s\n' "$stamp" "$component" "$revision" >> "$root/.ci/deployments.log"
+started=false
+trap - EXIT
+echo "DEPLOYED $component $revision"

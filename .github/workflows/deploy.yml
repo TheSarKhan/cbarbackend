@@ -1,59 +1,43 @@
-name: Backend CI/CD
-
+name: Backend CI and deployment
 on:
+  pull_request:
   push:
     branches: [main]
   workflow_dispatch:
-
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
-  test-and-deploy:
+  checks:
+    name: Backend checks
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         with:
+          distribution: temurin
           java-version: '21'
-          distribution: 'temurin'
-          cache: 'maven'
-          cache-dependency-path: 'services/**/pom.xml'
-
-      - name: Run API JUnit tests & package
-        run: mvn -B -f services/api/pom.xml test package
-
-      - name: Package Partner Simulator
-        run: mvn -B -f services/sim/pom.xml package
-
-      - name: Deploy Backend to VPS
+      - name: Java tests and packages
+        run: |
+          mvn -B -ntp -f services/api/pom.xml test package
+          mvn -B -ntp -f services/sim/pom.xml package
+      - name: Isolated integration checks
+        run: python3 scripts/smoke.py
+  deploy:
+    needs: checks
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: production
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Deploy checked release
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
-          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
-        run: |
-          mkdir -p ~/.ssh
-          echo "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
-          rsync -az --delete --exclude=target services/ "$VPS_USER@$VPS_HOST:/opt/cbar/services/"
-          rsync -az compose.yaml "$VPS_USER@$VPS_HOST:/opt/cbar/compose.yaml"
-          rsync -az deploy/ "$VPS_USER@$VPS_HOST:/opt/cbar/deploy/"
-          rsync -az scripts/ "$VPS_USER@$VPS_HOST:/opt/cbar/scripts/"
-          ssh "$VPS_USER@$VPS_HOST" "cd /opt/cbar && docker compose up -d --build --wait --wait-timeout 240 db sim api gateway && python3 scripts/deploy-smoke.py"
-
-      - name: Send Telegram Notification
-        if: always()
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          STATUS="${{ job.status }}"
-          COMMIT_MSG=$(git log -1 --pretty=%s)
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -d chat_id="${TELEGRAM_CHAT_ID}" \
-            -d parse_mode="HTML" \
-            --data-urlencode "text=⚙️ <b>Kampus Backend (cbarbackend) Deploy</b>
-          Status: <b>${STATUS}</b>
-          Commit: <code>${GITHUB_SHA::7}</code> — ${COMMIT_MSG}
-          API: https://apicbar.sarkhan.az/api/v1/health" >/dev/null
+          VPS_SSH_KEY: ${{ secrets.KAMPUS_DEPLOY_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.KAMPUS_KNOWN_HOSTS }}
+        run: ./scripts/ci-deploy.sh
