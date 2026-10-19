@@ -57,3 +57,17 @@ Fiziki Android cihazında quraşdırma, kamera, biometrika və iki telefonlu ax�
 - Backup/bərpa, deploy smoke, source arxivi və CI yoxlama konfiqurasiyası. Təlimat docs/DEPLOY.md daxilindədir.
 
 İctimai serverə yayımlama istifadəçinin ayrıca göstərişinə saxlanılıb. Fiziki cihaz və həqiqi domen üzərində TLS qəbul yoxlaması hələ aparılmayıb.
+
+## eKYC kamerası və şifrəli foto — 20 oktyabr
+
+- Giriş ekranı yalnız telefon nömrəsi soruşur. Qeydiyyatlı nömrə PIN addımına, yeni nömrə mərhələli qeydiyyata keçir: SMS kodu (ayrıca `auth/otp/verify`, 5 yanlış cəhddən sonra kod yanır) → FİN və ŞV seriyası → ad, soyad, doğum tarixi (tarix seçicisi, `GG.AA.İİİİ`) → kamera → razılıqlar → 4 rəqəmli PIN (ekran klaviaturası, təkrarla təsdiq). PIN uzunluğu hesab üzrə `users.pin_length` sütununda saxlanır: yeni hesablar 4, əvvəlki hesablar 6 rəqəmlidir; giriş və əməliyyat təsdiqi ekranı hər hesabın uzunluğuna görə nöqtələri göstərir. Server təsdiqlənməmiş SMS kodu ilə qeydiyyatı qəbul etmir.
+- Brauzerdə Chrome ilə yoxlanıldı (Chrome-un saxta kamera axını ilə, real üz fotosundan düzəldilmiş videoyla): kamera açılır, MediaPipe `public/`-dən yüklənir, üz tapılır, 10 saniyəlik hərəkət geri sayımı və vaxt bitəndə təkrar işləyir. Həm dev serverdə, həm Docker/Caddy üzərində.
+- Yoxlanmayıb: həqiqi insanın başı çevirməsi, göz qırpması və gülümsəməsi. Hədd dəyərləri `src/Liveness.web.tsx` yuxarısındadır və real üzlə dəqiqləşdirilməlidir. Fiziki Android cihazında kamera yoxlaması yoxdur.
+- API testləri: 30 HTTP axın testi (H2 və müvəqqəti PostgreSQL-də) və yeni `KycMediaTests` (şifrələmə, açar/istifadəçi/dəyişdirmə yoxlaması, selfi doğrulaması). Admin selfini oxuyanda audit yazılır (`KYC_SELFIE_VIEWED`).
+
+## Açıq bankçılıq — 20 oktyabr
+
+- 31 HTTP axın testi (yeni `test_29`): bank siyahısı, razılıq yaradılması, bankın hosted səhifəsində icazə (brauzerin göndərdiyi kimi: xanalar formaya aiddir), yalnız seçilən hesabın paylaşılması, yanlış nonce və boş seçimin rədd edilməsi, başqa istifadəçinin razılığa çıxışının bağlanması, ikinci sinxronizasiyanın təkrar yazmaması, xarici xərcin analitikaya düşməsi və ledger/üzləşdirmənin dəyişməməsi, kateqoriya dəyişmə, bank rədd etdikdə məlumat axmaması, təkrar bağlamanın 409 ilə dayandırılması, ləğvdən sonra məlumatın silinməsi və bankın `REVOKED` qaytarması, daxili köçürmələrin xərcə düşməməsi.
+- `OpenBankingTests`: MCC → kateqoriya xəritəsi, gəlirin və daxili köçürmənin xərc sayılmaması.
+- Müvəqqəti PostgreSQL stack-də Chrome ilə: bank seçimi, bankın yeni tabda açılması, gözləmə paneli, təsdiqin avtomatik aşkarlanması və sinxronizasiya, iki bankın tarixçədə birləşməsi və bank filtri, xarici əməliyyat detalı və kateqoriya dəyişmə, büdcə xəbərdarlığı bildirişi, ləğv və məlumatın silinməsi.
+- Yoxlanmayıb: fiziki telefonda bank səhifəsinin açılması (mobil build `Linking.openURL` istifadə edir), icazənin vaxtının bitməsi ssenarisi (məntiq var, test üçün vaxtı irəli aparan mexanizm yoxdur), real bank API-ləri.

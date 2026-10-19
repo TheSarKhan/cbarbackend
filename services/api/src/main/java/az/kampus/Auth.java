@@ -6,19 +6,19 @@ import java.util.*;
 import java.time.*;
 import static az.kampus.Store.*;
 @Service public class Auth {
- final Store s; final Ledger l; final Simulator sim; final Argon2PasswordEncoder hash=Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8();
- Auth(Store s,Ledger l,Simulator sim){this.s=s;this.l=l;this.sim=sim;}
+ final Store s; final Ledger l; final Simulator sim; final KycMedia media; final Argon2PasswordEncoder hash=Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8();
+ Auth(Store s,Ledger l,Simulator sim,KycMedia media){this.s=s;this.l=l;this.sim=sim;this.media=media;}
  static String sha256(String v){try{var md=java.security.MessageDigest.getInstance("SHA-256");return java.util.HexFormat.of().formatHex(md.digest(v.getBytes(java.nio.charset.StandardCharsets.UTF_8)));}catch(Exception e){throw new RuntimeException(e);}}
- record User(String id,String name,String phone,String role,String device){}
- Map<String,Object> publicUser(User u){return m("id",u.id,"name",u.name,"phone",u.phone,"role",u.role);}
+ record User(String id,String name,String phone,String role,String device,int pinLength){User(String id,String name,String phone,String role,String device){this(id,name,phone,role,device,6);}}
+ Map<String,Object> publicUser(User u){return m("id",u.id,"name",u.name,"phone",u.phone,"role",u.role,"pinLength",u.pinLength);}
  User user(String authorization,String device){
   if(authorization==null||!authorization.startsWith("Bearer "))throw new Problem(401,"UNAUTHENTICATED","Yenidən daxil olun.");
-  String token=authorization.substring(7);var rows=s.db.queryForList("SELECT u.id,u.name,u.phone,u.role,se.device_id,se.expires_at FROM sessions se JOIN users u ON u.id=se.user_id WHERE token=?",token);
+  String token=authorization.substring(7);var rows=s.db.queryForList("SELECT u.id,u.name,u.phone,u.role,u.pin_length,se.device_id,se.expires_at FROM sessions se JOIN users u ON u.id=se.user_id WHERE token=?",token);
   if(rows.isEmpty())throw new Problem(401,"SESSION_EXPIRED","Sessiya bitib.");
   var r=rows.getFirst();if(((Number)r.get("expires_at")).longValue()<System.currentTimeMillis())throw new Problem(401,"SESSION_EXPIRED","Sessiya bitib.");
   if(!Objects.equals(device,r.get("device_id")))throw new Problem(401,"DEVICE_MISMATCH","Cihaz uyğun gəlmir.");
   String role=r.get("role").toString();s.db.update("UPDATE sessions SET expires_at=? WHERE token=?",System.currentTimeMillis()+("USER".equals(role)?300_000:1_800_000),token);
-  return new User(r.get("id").toString(),r.get("name").toString(),r.get("phone").toString(),role,device);
+  return new User(r.get("id").toString(),r.get("name").toString(),r.get("phone").toString(),role,device,((Number)r.get("pin_length")).intValue());
  }
  void role(User u,String... roles){if(Arrays.stream(roles).noneMatch(u.role::equals))throw new Problem(403,"FORBIDDEN","Bu əməliyyat üçün icazəniz yoxdur.");}
  String encodePin(String pin){return hash.encode(pin);}
@@ -33,7 +33,24 @@ import static az.kampus.Store.*;
   if(!hash.matches(str(b,"pin"),str(u,"pin_hash"))){failure(id);throw new CredentialFailure("Telefon və ya PIN yanlışdır.");}
   s.db.update("UPDATE users SET failed_attempts=0,locked_until=0 WHERE id=?",id);
   String token=id()+id();s.db.update("INSERT INTO sessions VALUES(?,?,?,?)",token,id,device,System.currentTimeMillis()+("USER".equals(u.get("role"))?300_000:1_800_000));
-  s.audit(id,"LOGIN",m("deviceId",device));return m("accessToken",token,"user",m("id",id,"name",u.get("name"),"phone",phone,"role",u.get("role")),"expiresIn",300);
+  s.audit(id,"LOGIN",m("deviceId",device));return m("accessToken",token,"user",m("id",id,"name",u.get("name"),"phone",phone,"role",u.get("role"),"pinLength",u.get("pin_length")),"expiresIn",300);
+ }
+ /** Phone-first entry: tells the app whether to ask for a PIN or start registration. */
+ Map<String,Object> identify(Map<String,Object>b){String phone=str(b,"phone");Problem.require(phone.matches("\\+994[0-9]{9}"),"INVALID_PHONE","+994 ilə başlayan nömrə yazın.");
+  var known=s.db.queryForList("SELECT pin_length FROM users WHERE phone=?",phone);
+  return known.isEmpty()?m("registered",false):m("registered",true,"pinLength",known.getFirst().get("pin_length"));
+ }
+ /** Confirms the SMS code on its own step; five wrong attempts burn the code. Attempt counts survive the error response. */
+ @Transactional(noRollbackFor=Problem.class) Map<String,Object> verifyOtp(Map<String,Object>b){s.lock();var o=s.get("OTP",str(b,"otpId"));
+  Problem.require(!yes(o,"used")&&num(o,"expiresAt")>System.currentTimeMillis(),"INVALID_OTP","SMS kodunun vaxtı bitib. Yeni kod istəyin.");
+  if(!str(o,"code").equals(str(b,"otp"))){long attempts=num(o,"attempts")+1;o.put("attempts",attempts);
+   if(attempts>=5)o.put("used",true);
+   s.save("OTP",o);
+   if(attempts>=5)throw new Problem(429,"OTP_LOCKED","Çox sayda yanlış cəhd. Yeni kod istəyin.");
+   throw new Problem(422,"INVALID_OTP","SMS kodu yanlışdır.");
+  }
+  o.put("verified",true);s.save("OTP",o);
+  return m("verified",true);
  }
  @Transactional Map<String,Object> otp(Map<String,Object>b){s.lock();String phone=str(b,"phone");Problem.require(phone.matches("\\+994[0-9]{9}"),"INVALID_PHONE","+994 ilə başlayan nömrə yazın.");
   var recent=s.list("OTP",phone);Problem.require(recent.stream().noneMatch(x->num(x,"expiresAt")>System.currentTimeMillis()+240_000),"OTP_RATE_LIMIT","Bir dəqiqə sonra yenidən sınayın.");
@@ -42,30 +59,36 @@ import static az.kampus.Store.*;
   var o=s.add("OTP",phone,m("phone",phone,"code",code,"livenessActions",liveness,"expiresAt",System.currentTimeMillis()+300_000,"attempts",0,"used",false));
   return m("otpId",o.get("id"),"demoCode",code,"livenessActions",liveness,"demo",true);
  }
+ static final String NAME_PATTERN="[\\p{L}][\\p{L} '\\-]{1,59}";
  @Transactional Map<String,Object> register(Map<String,Object>b){s.lock();var o=s.get("OTP",str(b,"otpId"));
-  Problem.require(!yes(o,"used")&&num(o,"expiresAt")>System.currentTimeMillis()&&str(o,"code").equals(str(b,"otp")),"INVALID_OTP","SMS kodu yanlışdır və ya vaxtı bitib.");
-  String pin=str(b,"pin"),name=str(b,"name"),phone=str(o,"phone"),device=str(b,"deviceId"),fin=str(b,"fin").trim().toUpperCase(Locale.ROOT);
-  Problem.require(pin.matches("[0-9]{6}")&&name.length()>=3&&name.length()<100&&!device.isBlank(),"INVALID_IDENTITY","Ad, cihaz və 6 rəqəmli PIN tələb olunur.");
+  Problem.require(!yes(o,"used")&&yes(o,"verified")&&num(o,"expiresAt")>System.currentTimeMillis()&&str(o,"code").equals(str(b,"otp")),"INVALID_OTP","SMS kodu təsdiqlənməyib və ya vaxtı bitib.");
+  String pin=str(b,"pin"),first=str(b,"name").trim(),last=str(b,"surname").trim(),phone=str(o,"phone"),device=str(b,"deviceId"),fin=str(b,"fin").trim().toUpperCase(Locale.ROOT),series=str(b,"idSeries").replace(" ","").toUpperCase(Locale.ROOT),mode=str(b,"livenessMode");
+  Problem.require(pin.matches("[0-9]{4}")&&!device.isBlank(),"INVALID_IDENTITY","Cihaz və 4 rəqəmli PIN tələb olunur.");
+  Problem.require(first.matches(NAME_PATTERN)&&last.matches(NAME_PATTERN),"INVALID_NAME","Ad və soyadı düzgün yazın.");
+  String name=first+" "+last;
   Problem.require(yes(b,"termsAccepted")&&yes(b,"dataConsent"),"CONSENT_REQUIRED","Şərtlərə və məlumatların emalına razılıq verin.");
-  Problem.require(b.containsKey("facesCount")&&b.containsKey("simaSigned"),"DEMO_KYC_REQUIRED","Demo canlılıq və SİMA addımlarını təsdiqləyin.");
-  if(b.containsKey("facesCount"))Problem.require(num(b,"facesCount")==1,"MULTIPLE_FACES","Kadrda yalnız 1 üz olmalıdır.");
-  if(b.containsKey("simaSigned"))Problem.require(yes(b,"simaSigned"),"SIMA_REQUIRED","Müqavilə SİMA İmza ilə imzalanmalıdır.");
-  Problem.require(fin.matches("[A-Z0-9]{7}"),"FIN_REQUIRED","Demo FİN 7 hərf və rəqəmdən ibarət olmalıdır.");
-  double faceScore=0.96;String birthRaw=str(b,"birthDate");
-  if(!fin.isBlank()){
-   Problem.require(s.list("KYC",null).stream().noneMatch(k->fin.equalsIgnoreCase(str(k,"fin"))),"FIN_EXISTS","Bu FİN ilə artıq hesab mövcuddur.");
-   var reg=sim.call("/registry/lookup",m("fin",fin,"birthDate",birthRaw));
-   faceScore=((Number)reg.getOrDefault("faceMatchScore",0.96)).doubleValue();
-   birthRaw=str(reg,"birthDate");
-   Problem.require(faceScore>=0.80,"REJECTED_FACE_MATCH","Üz tutuşdurma balı aşağıdır (< 0.80).");
-  }
-  LocalDate birth;try{birth=LocalDate.parse(birthRaw);}catch(Exception e){throw new Problem(422,"INVALID_BIRTH_DATE","Doğum tarixini düzgün daxil edin.");}
+  Problem.require(fin.matches("[A-Z0-9]{7}"),"FIN_REQUIRED","FİN kod 7 hərf və rəqəmdən ibarət olmalıdır.");
+  Problem.require(series.matches("AZE[0-9]{8}|AA[0-9]{7}"),"ID_SERIES_REQUIRED","ŞV seriyası AZE12345678 və ya AA1234567 formatında olmalıdır.");
+  Problem.require(b.containsKey("facesCount")&&b.containsKey("simaSigned"),"KYC_REQUIRED","Kamera və SİMA addımlarını tamamlayın.");
+  Problem.require(num(b,"facesCount")==1,"MULTIPLE_FACES","Kadrda yalnız 1 üz olmalıdır.");
+  Problem.require(yes(b,"simaSigned"),"SIMA_REQUIRED","Müqavilə SİMA İmza ilə imzalanmalıdır.");
+  Problem.require("MEDIAPIPE_WEB".equals(mode),"LIVENESS_REQUIRED","Kamera ilə canlılıq yoxlamasını tamamlayın.");
+  Object issued=o.get("livenessActions"),done=b.get("livenessActions");
+  Problem.require(issued!=null&&issued.equals(done),"LIVENESS_REQUIRED","Canlılıq hərəkətlərini kamerada tamamlayın.");
+  byte[] selfie=KycMedia.parseSelfie(str(b,"selfie"));
+  Problem.require(s.list("KYC",null).stream().noneMatch(k->fin.equalsIgnoreCase(str(k,"fin"))),"FIN_EXISTS","Bu FİN ilə artıq hesab mövcuddur.");
+  Problem.require(s.list("KYC",null).stream().noneMatch(k->series.equalsIgnoreCase(str(k,"idSeries"))),"ID_SERIES_EXISTS","Bu ŞV seriyası ilə artıq hesab mövcuddur.");
+  var reg=sim.call("/registry/lookup",m("fin",fin,"idSeries",series,"birthDate",str(b,"birthDate")));
+  double faceScore=((Number)reg.getOrDefault("faceMatchScore",0.96)).doubleValue();
+  Problem.require(faceScore>=0.80,"REJECTED_FACE_MATCH","Üz tutuşdurma balı aşağıdır (< 0.80).");
+  LocalDate birth;try{birth=LocalDate.parse(str(reg,"birthDate"));}catch(Exception e){throw new Problem(422,"INVALID_BIRTH_DATE","Doğum tarixini düzgün daxil edin.");}
   Problem.require(!birth.isAfter(LocalDate.now().minusYears(18)),"AGE_RESTRICTED","Hesab yalnız 18 yaşdan yuxarı şəxslər üçündür.");
   Problem.require(s.db.queryForObject("SELECT COUNT(*) FROM users WHERE phone=?",Long.class,phone)==0,"PHONE_EXISTS","Bu nömrə artıq qeydiyyatdan keçib.");
   var sima=sim.call("/sima/sign",m("phone",phone,"name",name));
-  String user=id();s.db.update("INSERT INTO users(id,phone,name,pin_hash,role,device_id,birth_date,created_at) VALUES(?,?,?,?,?,?,?,?)",user,phone,name,hash.encode(pin),"USER",device,birth.toString(),now());l.account("wallet:"+user,"C");o.put("used",true);s.save("OTP",o);
+  String user=id();s.db.update("INSERT INTO users(id,phone,name,pin_hash,role,device_id,birth_date,created_at,pin_length) VALUES(?,?,?,?,?,?,?,?,4)",user,phone,name,hash.encode(pin),"USER",device,birth.toString(),now());l.account("wallet:"+user,"C");o.put("used",true);s.save("OTP",o);
   s.add("CONSENT",user,m("type","TERMS_AND_DATA","version","1","acceptedAt",now()));
-  s.add("KYC",user,m("userId",user,"userName",name,"phone",phone,"fin",fin.isBlank()?"DEMO-"+user.substring(0,5).toUpperCase(Locale.ROOT):fin,"status","DEMO_VERIFIED","provider","MOCK_REGISTRY_SIMA","liveness","DEMO_SIMULATED","livenessActions",o.getOrDefault("livenessActions",List.of("TURN_LEFT","BLINK","SMILE")),"faceMatchScore",faceScore,"contractId",sima.get("contractId"),"signatureHash",sima.get("signatureHash"),"mediaStored",false,"birthDate",birth.toString()));
+  String mediaId=media.store(user,"SELFIE","image/jpeg",selfie);
+  s.add("KYC",user,m("userId",user,"userName",name,"firstName",first,"lastName",last,"phone",phone,"fin",fin,"idSeries",series,"status","DEMO_VERIFIED","provider","MOCK_REGISTRY_SIMA","liveness","CLIENT_REPORTED","livenessProvider",mode,"livenessActions",done,"faceMatchScore",faceScore,"contractId",sima.get("contractId"),"signatureHash",sima.get("signatureHash"),"mediaStored",true,"selfieMediaId",mediaId,"selfieSha256",KycMedia.sha256(selfie),"birthDate",birth.toString()));
   return login(m("phone",phone,"pin",pin,"deviceId",device));
  }
  @Transactional(noRollbackFor=CredentialFailure.class) public Map<String,Object> sca(User u,Map<String,Object>b){s.lock();

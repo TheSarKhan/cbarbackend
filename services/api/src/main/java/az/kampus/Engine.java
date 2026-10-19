@@ -8,8 +8,8 @@ import java.math.*;
 import static az.kampus.Store.*;
 @Service public class Engine {
  @org.springframework.beans.factory.annotation.Autowired @org.springframework.context.annotation.Lazy DebtWorker debts;
- final Store s;final Ledger l;final Auth auth;final Simulator sim;final CardTransfers cardTransfers;final CreditPolicy creditPolicy;
- Engine(Store s,Ledger l,Auth auth,Simulator sim,CardTransfers cardTransfers,CreditPolicy creditPolicy){this.s=s;this.l=l;this.auth=auth;this.sim=sim;this.cardTransfers=cardTransfers;this.creditPolicy=creditPolicy;}
+ final Store s;final Ledger l;final Auth auth;final Simulator sim;final CardTransfers cardTransfers;final CreditPolicy creditPolicy;final OpenBanking openBanking;
+ Engine(Store s,Ledger l,Auth auth,Simulator sim,CardTransfers cardTransfers,CreditPolicy creditPolicy,OpenBanking openBanking){this.s=s;this.l=l;this.auth=auth;this.sim=sim;this.cardTransfers=cardTransfers;this.creditPolicy=creditPolicy;this.openBanking=openBanking;}
  boolean cryptoEnabled(){return yes(s.get("SETTING","crypto.enabled"),"value");}
  void crypto(){if(!cryptoEnabled())throw new Problem(403,"FEATURE_DISABLED","Kripto pilotu admin tərəfindən aktivləşdirilməlidir.");}
  void notify(String user,String title,String body){s.add("NOTIFICATION",user,m("title",title,"body",body,"read",false));}
@@ -58,6 +58,7 @@ import static az.kampus.Store.*;
   if(p.startsWith("merchant/"))return merchant(u,p,b);
   auth.role(u,"USER");
   if(p.startsWith("card-transfers")||p.startsWith("recipient-cards"))return cardTransfers.write(u,p,b,proof);
+  if(p.startsWith("open-banking/"))return openBanking.write(u,p,b,this::notify);
   if(p.equals("topups")){long a=amount(b);Problem.require(l.balance("wallet:"+uid)+a<=200_000,"WALLET_LIMIT","Demo hesabının balans limiti 2 000 AZN-dir.");Problem.require(Set.of("CARD","OPEN_BANKING","TERMINAL").contains(str(b,"source")),"INVALID_SOURCE","Doldurma üsulunu seçin.");sim.call("/bank/topup",m("amountMinor",a,"source",b.get("source")));
    l.post("TOPUP","Demo balans artırma","CUSTOMER_FUNDS_BANK","wallet:"+uid,a);notify(uid,"Balans artırıldı",String.format(Locale.ROOT,"%.2f AZN",a/100.0));return tx(uid,"TOPUP","Balans artırma · "+b.get("source"),a,"IN","Daxilolmalar");}
   if(p.equals("topups/terminal-code")){long a=amount(b);Problem.require(l.balance("wallet:"+uid)+a<=200_000,"WALLET_LIMIT","Demo hesabının balans limiti 2 000 AZN-dir.");String code=String.format("%08d",new java.security.SecureRandom().nextInt(100_000_000));return s.add("TERMINAL_CODE",uid,m("code",code,"amountMinor",a,"status","ACTIVE","expiresAt",System.currentTimeMillis()+900_000));}
@@ -135,7 +136,7 @@ import static az.kampus.Store.*;
   if(p.matches("notifications/[^/]+/read")){var n=s.own("NOTIFICATION",parts[1],uid);n.put("read",true);s.save("NOTIFICATION",n);return n;}
   if(p.equals("disputes")){var card=s.own("CARD",str(b,"cardId"),uid);card.put("status","FROZEN");s.save("CARD",card);var d=s.add("DISPUTE",uid,m("cardId",card.get("id"),"reason",str(b,"reason"),"status","OPEN"));notify(uid,"Kart donduruldu","Müraciətiniz admin panelə göndərildi.");return d;}
   if(p.equals("budgets")||p.startsWith("budgets/")){long limit=num(b,"limitMinor");Problem.require(limit>0,"INVALID_LIMIT","Büdcə müsbət olmalıdır.");String cat=!str(b,"category").isBlank()?str(b,"category"):java.net.URLDecoder.decode(p.substring(8),java.nio.charset.StandardCharsets.UTF_8);for(var old:s.list("BUDGET",uid))if(cat.equals(old.get("category"))){old.put("limitMinor",limit);s.save("BUDGET",old);return old;}return s.add("BUDGET",uid,m("category",cat,"limitMinor",limit));}
-  if(p.matches("transactions/[^/]+/category")){var t=s.own("TX",parts[1],uid);String cat=str(b,"category").trim();Problem.require(!cat.isBlank(),"CATEGORY_REQUIRED","Kateqoriya seçin.");t.put("category",cat);s.save("TX",t);return t;}
+  if(p.matches("transactions/[^/]+/category")){String kind=parts[1].startsWith("ob_")?"OB_TX":"TX";var t=s.own(kind,parts[1],uid);String cat=str(b,"category").trim();Problem.require(!cat.isBlank(),"CATEGORY_REQUIRED","Kateqoriya seçin.");t.put("category",cat);s.save(kind,t);return t;}
   throw new Problem(404,"ENDPOINT_NOT_FOUND","Əməliyyat tapılmadı.");
  }
  Map<String,Object> parseQr(String payload){var tags=EmvQr.parse(payload);Problem.require("az.kampus".equals(EmvQr.fields(tags.getOrDefault("26","")).get("00"))&&"944".equals(tags.get("53")),"UNSUPPORTED_QR","Yalnız Kampus AZN QR kodu dəstəklənir.");String mid=EmvQr.fields(tags.get("26")).get("01");var merchant=s.get("MERCHANT",mid);String intent=EmvQr.fields(tags.getOrDefault("62","")).get("05");long amount=0;
@@ -205,9 +206,10 @@ import static az.kampus.Store.*;
   };}
   auth.role(u,"USER");String uid=u.id();
   if(p.startsWith("card-transfers")||p.startsWith("card-sessions/")||p.startsWith("recipient-cards"))return cardTransfers.read(u,p);
+  if(p.startsWith("open-banking/"))return openBanking.read(u,p);
   return switch(p){
    case "wallet" -> l.wallet(uid);
-   case "dashboard" -> m("user",auth.publicUser(u),"wallet",l.wallet(uid),"transactions",s.list("TX",uid),"transfers",s.list("TRANSFER",uid),"trustedBeneficiaries",s.list("TRUSTED_BENEFICIARY",uid),"terminalCodes",s.list("TERMINAL_CODE",uid),"cards",s.list("CARD",uid),"authorizations",s.list("AUTHORIZATION",uid),"notifications",s.list("NOTIFICATION",uid),"requests",s.list("REQUEST",uid),"bnplLoans",s.list("BNPL",uid),"partnerLoans",s.list("PARTNER_LOAN",uid),"applications",s.list("APPLICATION",uid),"offers",s.list("OFFER",uid),"cryptoEnabled",cryptoEnabled(),"cryptoDeposits",s.list("CRYPTO_DEPOSIT",uid),"cryptoWithdrawals",s.list("CRYPTO_WITHDRAWAL",uid),"bnplEligibility",creditPolicy.eligibility(uid),"bnplAvailableMinor",creditPolicy.eligibility(uid).get("availableMinor"),"analytics",analytics(uid),"budgets",s.list("BUDGET",uid),"splits",s.list("SPLIT",uid),"cardTransfers",s.list("CARD_TRANSFER",uid).stream().map(cardTransfers::publicTransfer).toList(),"recipientCards",cardTransfers.read(u,"recipient-cards"));
+   case "dashboard" -> m("user",auth.publicUser(u),"wallet",l.wallet(uid),"transactions",s.list("TX",uid),"transfers",s.list("TRANSFER",uid),"trustedBeneficiaries",s.list("TRUSTED_BENEFICIARY",uid),"terminalCodes",s.list("TERMINAL_CODE",uid),"cards",s.list("CARD",uid),"authorizations",s.list("AUTHORIZATION",uid),"notifications",s.list("NOTIFICATION",uid),"requests",s.list("REQUEST",uid),"bnplLoans",s.list("BNPL",uid),"partnerLoans",s.list("PARTNER_LOAN",uid),"applications",s.list("APPLICATION",uid),"offers",s.list("OFFER",uid),"cryptoEnabled",cryptoEnabled(),"cryptoDeposits",s.list("CRYPTO_DEPOSIT",uid),"cryptoWithdrawals",s.list("CRYPTO_WITHDRAWAL",uid),"bnplEligibility",creditPolicy.eligibility(uid),"bnplAvailableMinor",creditPolicy.eligibility(uid).get("availableMinor"),"analytics",analytics(uid),"openBanking",openBanking.overview(uid),"budgets",s.list("BUDGET",uid),"splits",s.list("SPLIT",uid),"cardTransfers",s.list("CARD_TRANSFER",uid).stream().map(cardTransfers::publicTransfer).toList(),"recipientCards",cardTransfers.read(u,"recipient-cards"));
    case "transactions" -> s.list("TX",uid);
    case "cards" -> s.list("CARD",uid);
    case "cards/subscriptions" -> s.list("TX",uid).stream().filter(x->"CARD".equals(str(x,"type"))).toList();
@@ -226,7 +228,7 @@ import static az.kampus.Store.*;
   };
  }
  Map<String,Object> fraudMetrics(){long totalTx=Math.max(1,s.list("TX",null).size()),fraudCount=s.list("FRAUD",null).size();return m("traFraudRate",null,"calculationStatus","NOT_IMPLEMENTED","traActive",false,"openCases",s.list("FRAUD",null).stream().filter(x->"OPEN".equals(str(x,"status"))).count(),"totalCases",fraudCount,"monitoredTxCount",totalTx);}
- Map<String,Object> analytics(String uid){var totals=new LinkedHashMap<String,Long>();String month=LocalDate.now(ZoneOffset.UTC).toString().substring(0,7);for(var t:s.list("TX",uid))if(str(t,"direction").equals("OUT")&&str(t,"createdAt").startsWith(month))totals.merge(str(t,"category"),num(t,"amountMinor"),Long::sum);return m("month",month,"totalMinor",totals.values().stream().mapToLong(Long::longValue).sum(),"categories",totals.entrySet().stream().map(e->m("category",e.getKey(),"amountMinor",e.getValue())).toList());}
+ Map<String,Object> analytics(String uid){var totals=new LinkedHashMap<String,Long>();String month=LocalDate.now(ZoneOffset.UTC).toString().substring(0,7);for(var t:s.list("TX",uid))if(str(t,"direction").equals("OUT")&&str(t,"createdAt").startsWith(month))totals.merge(str(t,"category"),num(t,"amountMinor"),Long::sum);long external=0;for(var t:s.list("OB_TX",uid))if(str(t,"direction").equals("OUT")&&!OpenBanking.INTERNAL.equals(str(t,"category"))&&str(t,"createdAt").startsWith(month)){totals.merge(str(t,"category"),num(t,"amountMinor"),Long::sum);external+=num(t,"amountMinor");}return m("month",month,"externalMinor",external,"totalMinor",totals.values().stream().mapToLong(Long::longValue).sum(),"categories",totals.entrySet().stream().map(e->m("category",e.getKey(),"amountMinor",e.getValue())).toList());}
  Map<String,Object> compliance(){var result=creditPolicy.report();result.put("reconciliation",l.reconcile());return result;}
  @Scheduled(fixedDelay=400) @Transactional public void processTransfers(){s.lock();for(var t:s.list("TRANSFER",null)){if(str(t,"status").equals("SCHEDULED")&&num(t,"executeAt")<=System.currentTimeMillis()){
    if(isBlacklisted(str(t,"phone"))){l.release(str(t,"holdId"));t.put("status","REJECTED");s.save("TRANSFER",t);notify(str(t,"senderId"),"Köçürmə bloklandı","Alan qara siyahıya əlavə edilib. Rezerv açıldı.");continue;}

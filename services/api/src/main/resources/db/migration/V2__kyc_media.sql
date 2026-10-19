@@ -1,0 +1,2 @@
+CREATE TABLE IF NOT EXISTS kyc_media (id VARCHAR(64) PRIMARY KEY, user_id VARCHAR(64) NOT NULL, kind VARCHAR(24) NOT NULL, mime VARCHAR(32) NOT NULL, sha256 VARCHAR(64) NOT NULL, size_bytes INT NOT NULL, data TEXT NOT NULL, created_at VARCHAR(40) NOT NULL);
+CREATE INDEX IF NOT EXISTS kyc_media_user ON kyc_media(user_id,kind);

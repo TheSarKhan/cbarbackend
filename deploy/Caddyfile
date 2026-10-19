@@ -6,14 +6,22 @@
   X-Frame-Options DENY
   Permissions-Policy "camera=(self), microphone=(), geolocation=()"
  }
- request_body {
+ @notRegister not path /api/v1/auth/register
+ request_body @notRegister {
   max_size 128KB
+ }
+ request_body /api/v1/auth/register {
+  max_size 600KB
  }
  handle /api/* {
   header Cache-Control "no-store"
   reverse_proxy api:8080
  }
  handle /card-form/* {
+  header Cache-Control "no-store"
+  reverse_proxy sim:8081
+ }
+ handle /ob-consent/* {
   header Cache-Control "no-store"
   reverse_proxy sim:8081
  }

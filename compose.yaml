@@ -27,6 +27,7 @@ services:
    SIM_KEY: ${SIM_KEY:?Run scripts/deploy-init.py first}
    KAMPUS_STATE_FILE: /data/vasp-state.json
    KAMPUS_CARD_STATE_FILE: /data/card-network.json
+   KAMPUS_OB_STATE_FILE: /data/open-banking.json
   volumes: [sim_data:/data]
   healthcheck:
    test: [CMD, curl, -fsS, 'http://localhost:8081/health']
@@ -46,6 +47,7 @@ services:
    DATABASE_PASSWORD: ${DATABASE_PASSWORD:?Run scripts/deploy-init.py first}
    SIM_URL: http://sim:8081
    SIM_KEY: ${SIM_KEY:?Run scripts/deploy-init.py first}
+   KYC_MEDIA_KEY: ${KYC_MEDIA_KEY:?Run scripts/deploy-init.py first}
    DEPLOYED: 'true'
    DEMO_PIN: ${DEMO_PIN:?Run scripts/deploy-init.py first}
    ADMIN_PIN: ${ADMIN_PIN:?Run scripts/deploy-init.py first}

@@ -18,7 +18,7 @@ def pin():
  while True:
   v=f'{secrets.randbelow(1000000):06d}'
   if v!='123456':return v
-values={'APP_ADDRESS':':80' if a.local else app,'ADMIN_ADDRESS':':8088' if a.local else admin,'CORS_ORIGINS':origins,'DATABASE_PASSWORD':secrets.token_hex(24),'SIM_KEY':secrets.token_hex(32),'DEMO_PIN':pin(),'ADMIN_PIN':pin(),'BIND_IP':'127.0.0.1' if a.local else '0.0.0.0','HTTP_PORT':'18080' if a.local else '80','HTTPS_PORT':'18443' if a.local else '443','LOCAL_ADMIN_PORT':'18081' if a.local else '8088'}
+values={'APP_ADDRESS':':80' if a.local else app,'ADMIN_ADDRESS':':8088' if a.local else admin,'CORS_ORIGINS':origins,'DATABASE_PASSWORD':secrets.token_hex(24),'SIM_KEY':secrets.token_hex(32),'KYC_MEDIA_KEY':secrets.token_hex(32),'DEMO_PIN':pin(),'ADMIN_PIN':pin(),'BIND_IP':'127.0.0.1' if a.local else '0.0.0.0','HTTP_PORT':'18080' if a.local else '80','HTTPS_PORT':'18443' if a.local else '443','LOCAL_ADMIN_PORT':'18081' if a.local else '8088'}
 fd=os.open(dest,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600)
 with os.fdopen(fd,'w') as f:f.write('\n'.join(f'{k}={v}' for k,v in values.items())+'\n')
 print('Şəxsi .env yaradıldı (0600). PIN-lər yalnız həmin fayldadır. Deploy: ./scripts/deploy.sh')

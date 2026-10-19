@@ -82,3 +82,7 @@ Bərpa uğursuz olsa yazan servislər dayandırılmış qalır; problemi həll e
 ## Sərhədlər
 
 Bu, deploy oluna bilən demo paketidir. SİMA, reyestr, canlılıq/üz yoxlaması, bank/kreditor və VASP simulyasiyadır; real maliyyə xidməti kimi təqdim edilmir. Kamera ML Kit, real bank çıxarışı ilə üzləşdirmə, push/SMS və aparatla cihaz bağlama ayrıca inteqrasiyalardır. Təqdimat razılaşmaya əsasən sonraya saxlanıb.
+
+## KYC fotoları və `KYC_MEDIA_KEY`
+
+Qeydiyyat selfisi PostgreSQL-də `kyc_media` cədvəlində yalnız AES-256-GCM şifrəli saxlanılır. Şifrələmə açarı bazada deyil, `.env` daxilindəki `KYC_MEDIA_KEY` dəyişənindədir (`scripts/deploy-init.py` onu təsadüfi yaradır, hosted profil 32 simvoldan qısa və ya lokal standart açarla başlamır). Backup bazanı saxlayır, açarı saxlamır: `.env` ayrıca təhlükəsiz nüsxədə saxlanmalıdır. Açar itərsə, saxlanmış fotolar oxunmaz olur. Mövcud serverin `.env` faylına bu dəyişəni əlavə etmədən yeni API deploy edilməməlidir, çünki Compose onsuz başlamır.
