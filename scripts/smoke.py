@@ -215,18 +215,51 @@ class Checks(unittest.TestCase):
         self.a.send('recipient-cards/'+saved['id']+'/delete',{})
         self.assertEqual(self.admin.send('admin/reconciliation/run',{})['differenceMinor'],0)
     def test_19_ekyc_fin_liveness_sima_and_rejections(self):
+        import base64
+        selfie_bytes=(pathlib.Path(__file__).resolve().parent/'fixtures'/'selfie.jpg').read_bytes()
+        selfie='data:image/jpeg;base64,'+base64.b64encode(selfie_bytes).decode()
         otp=self.a.send('auth/otp',{'phone':'+994509998877'})
         self.assertEqual(len(otp['livenessActions']),3)
-        base_reg={'otpId':otp['otpId'],'otp':otp['demoCode'],'name':'Elvin Kərimov','birthDate':'2002-05-10','pin':'123456','deviceId':'demo-device','termsAccepted':True,'dataConsent':True}
-        self.a.send('auth/register',{**base_reg,'fin':'7AZ5544'},status=422)
-        self.a.send('auth/register',{**base_reg,'fin':'17YASLI','facesCount':1,'simaSigned':True},status=422)
-        self.a.send('auth/register',{**base_reg,'fin':'LOWFACE','facesCount':1,'simaSigned':True},status=422)
-        self.a.send('auth/register',{**base_reg,'fin':'7AZ5544','facesCount':2,'simaSigned':True},status=422)
-        self.a.send('auth/register',{**base_reg,'fin':'7AZ5544','facesCount':1,'simaSigned':False},status=422)
-        reg=self.a.send('auth/register',{**base_reg,'fin':'7AZ5544','facesCount':1,'simaSigned':True})
+        base_reg={'otpId':otp['otpId'],'otp':otp['demoCode'],'name':'Elvin','surname':'Kərimov','birthDate':'2002-05-10','pin':'4821','deviceId':'demo-device','termsAccepted':True,'dataConsent':True,'fin':'7AZ5544','idSeries':'AZE12345678','facesCount':1,'simaSigned':True,'livenessMode':'MEDIAPIPE_WEB','livenessActions':otp['livenessActions'],'selfie':selfie}
+        # phone-first entry and the separate SMS step
+        self.assertTrue(self.a.send('auth/identify',{'phone':'+994501000001'})['registered'])
+        self.assertFalse(self.a.send('auth/identify',{'phone':'+994509998877'})['registered'])
+        self.a.send('auth/identify',{'phone':'abc'},status=422)
+        self.a.send('auth/register',base_reg,status=422)
+        self.a.send('auth/otp/verify',{'otpId':otp['otpId'],'otp':'12345x'},status=422)
+        self.assertTrue(self.a.send('auth/otp/verify',{'otpId':otp['otpId'],'otp':otp['demoCode']})['verified'])
+        locked=self.a.send('auth/otp',{'phone':'+994509998844'})
+        wrong=str((int(locked['demoCode'])+1)%1000000).zfill(6)
+        for attempt in range(4):self.a.send('auth/otp/verify',{'otpId':locked['otpId'],'otp':wrong},status=422)
+        self.a.send('auth/otp/verify',{'otpId':locked['otpId'],'otp':wrong},status=429)
+        self.a.send('auth/otp/verify',{'otpId':locked['otpId'],'otp':locked['demoCode']},status=422)
+        # every required KYC input is enforced
+        for patch in ({'pin':'123456'},{'pin':'12'},{'surname':''},{'name':'1'},{'idSeries':'XX123'},{'fin':'123'},{'selfie':''},{'selfie':'data:image/jpeg;base64,'+base64.b64encode(b'not an image'*400).decode()},{'livenessActions':['BLINK']},{'livenessMode':'NONE'},{'facesCount':2},{'simaSigned':False},{'fin':'17YASLI'},{'fin':'LOWFACE'}):
+            self.a.send('auth/register',{**base_reg,**patch},status=422)
+        without_kyc={k:v for k,v in base_reg.items() if k not in ('facesCount','simaSigned')}
+        self.a.send('auth/register',without_kyc,status=422)
+        reg=self.a.send('auth/register',base_reg)
         self.assertIn('accessToken',reg)
+        self.assertEqual(reg['user']['name'],'Elvin Kərimov')
+        self.assertEqual(reg['user']['pinLength'],4)
+        self.assertEqual(self.a.send('auth/identify',{'phone':'+994509998877'}),{'registered':True,'pinLength':4})
+        self.assertEqual(self.a.send('auth/identify',{'phone':'+994501000001'})['pinLength'],6)
+        self.assertEqual(self.a.send('auth/login',{'phone':'+994509998877','pin':'4821','deviceId':'demo-device'})['user']['pinLength'],4)
+        self.a.send('auth/login',{'phone':'+994509998877','pin':'1234','deviceId':'demo-device'},status=401)
         ov=self.admin.send('admin/overview')
-        self.assertTrue(any(k.get('fin')=='7AZ5544' and k.get('status')=='DEMO_VERIFIED' and k.get('liveness')=='DEMO_SIMULATED' and k.get('mediaStored') is False for k in ov['kycRecords']))
+        kyc=[k for k in ov['kycRecords'] if k.get('fin')=='7AZ5544']
+        self.assertTrue(kyc and kyc[0]['status']=='DEMO_VERIFIED' and kyc[0]['liveness']=='CLIENT_REPORTED' and kyc[0]['mediaStored'] is True and kyc[0]['idSeries']=='AZE12345678')
+        # the same FIN or ID series cannot open a second account
+        otp2=self.a.send('auth/otp',{'phone':'+994509998866'})
+        self.a.send('auth/otp/verify',{'otpId':otp2['otpId'],'otp':otp2['demoCode']})
+        again={**base_reg,'otpId':otp2['otpId'],'otp':otp2['demoCode'],'livenessActions':otp2['livenessActions']}
+        self.a.send('auth/register',again,status=422)
+        self.a.send('auth/register',{**again,'fin':'7AZ5545'},status=422)
+        # compliance can read the stored photo back; ordinary users cannot
+        photo=self.admin.send('admin/kyc/'+reg['user']['id']+'/selfie')
+        self.assertEqual(base64.b64decode(photo['dataBase64']),selfie_bytes)
+        self.assertEqual(photo['sha256'],hashlib.sha256(selfie_bytes).hexdigest())
+        self.a.send('admin/kyc/'+reg['user']['id']+'/selfie',status=403)
     def test_20_terminal_code_trusted_beneficiaries_and_hashed_contacts(self):
         before=self.a.balance()
         tc=self.a.send('topups/terminal-code',{'amountMinor':1500})
@@ -332,6 +365,97 @@ class Checks(unittest.TestCase):
             self.a.send('auth/login',{'phone':'+994501000004','pin':'000000','deviceId':'demo-device'},status=401)
         self.a.send('auth/login',{'phone':'+994501000004','pin':'123456','deviceId':'demo-device'},status=423)
 
+    def test_29_open_banking_read_only_aggregation(self):
+        import urllib.parse as up
+        wallet_before=self.a.balance()
+        banks=self.a.send('open-banking/banks')['banks']
+        self.assertEqual({b['id'] for b in banks},{'KAPITAL','ABB','PASHA','RABITA'})
+        self.a.send('open-banking/consents',{'bankId':'NOPE'},status=404)
+        consent=self.a.send('open-banking/consents',{'bankId':'KAPITAL'})
+        self.assertEqual(consent['status'],'AWAITING_AUTHORIZATION')
+        def hosted(consent_row):
+            with urllib.request.urlopen(SIM_BASE+consent_row['authorizationPath'],timeout=10) as r:page=r.read().decode()
+            boxes=re.findall(r'<input type="checkbox" name="account" form="consent" value="([^"]+)" checked>',page)
+            self.assertIn('<form id="consent"',page)  # the ticks must belong to the form or a browser will not send them
+            self.assertEqual(len(boxes),len(re.findall(r'type="checkbox"',page)))
+            return re.search(r'name="nonce" value="([^"]+)"',page).group(1),boxes
+        def decide(consent_row,nonce,decision,accounts=()):
+            form=up.urlencode([('nonce',nonce),('decision',decision)]+[('account',a) for a in accounts]).encode()
+            req=urllib.request.Request(SIM_BASE+consent_row['authorizationPath'],data=form,headers={'Content-Type':'application/x-www-form-urlencoded'})
+            try:
+                with urllib.request.urlopen(req,timeout=10) as r:return r.status
+            except urllib.error.HTTPError as e:return e.code
+        nonce,accounts=hosted(consent)
+        self.assertEqual(len(accounts),2)
+        # nothing is shared before the customer decides, and nobody else may poll this consent
+        self.assertEqual(self.a.send('open-banking/consents/'+consent['id'])['status'],'AWAITING_AUTHORIZATION')
+        self.b.send('open-banking/consents/'+consent['id'],status=403)
+        self.assertEqual(self.a.send('open-banking/consents/'+consent['id']+'/sync',{})['synced'],False)
+        self.assertEqual(decide(consent,'wrong-nonce','approve',accounts),403)
+        self.assertEqual(decide(consent,nonce,'approve'),422)
+        self.assertEqual(decide(consent,nonce,'approve',[accounts[0]]),200)
+        self.assertEqual(self.a.send('open-banking/consents/'+consent['id'])['status'],'AUTHORIZED')
+        first=self.a.send('open-banking/consents/'+consent['id']+'/sync',{})
+        self.assertTrue(first['synced'] and first['added']>20)
+        overview=self.a.send('open-banking/overview')
+        mine=[x for x in overview['accounts'] if x['consentId']==consent['id']]
+        self.assertEqual([x['type'] for x in mine],['CARD'],'only the ticked account is shared')
+        self.assertGreater(overview['totalBalanceMinor'],0)
+        txs=self.a.send('open-banking/transactions')
+        self.assertEqual(len(txs),first['added'])
+        self.assertTrue(all(t['source']=='OPEN_BANKING' and t['bankId']=='KAPITAL' for t in txs))
+        categories={t['category'] for t in txs}
+        self.assertTrue({'Yemək','Nəqliyyat'}<=categories,categories)
+        # a second sync is idempotent
+        self.assertEqual(self.a.send('open-banking/consents/'+consent['id']+'/sync',{})['added'],0)
+        self.assertEqual(len(self.a.send('open-banking/transactions')),len(txs))
+        # external spending joins the analytics, but never the ledger
+        dash=self.a.send('dashboard')
+        month=dash['analytics']['month']
+        external=sum(t['amountMinor'] for t in txs if t['direction']=='OUT' and t['createdAt'].startswith(month))
+        self.assertEqual(dash['analytics']['externalMinor'],external)
+        self.assertGreaterEqual(dash['analytics']['totalMinor'],external)
+        self.assertEqual(dash['openBanking']['totalBalanceMinor'],overview['totalBalanceMinor'])
+        self.assertEqual(self.a.balance(),wallet_before)
+        self.assertEqual(self.admin.send('admin/reconciliation/run',{})['differenceMinor'],0)
+        self.assertFalse(any(t.get('source')=='OPEN_BANKING' for t in dash['transactions']))
+        # transfers between the customer's own accounts are labelled and never counted as spending
+        abb=self.a.send('open-banking/consents',{'bankId':'ABB'})
+        nonce_abb,boxes=hosted(abb)
+        self.assertEqual(decide(abb,nonce_abb,'approve',boxes),200)
+        self.assertEqual(self.a.send('open-banking/consents/'+abb['id'])['status'],'AUTHORIZED')
+        self.a.send('open-banking/consents/'+abb['id']+'/sync',{})
+        every=self.a.send('open-banking/transactions')
+        own=[t for t in every if t['category']=='Daxili köçürmə']
+        self.assertTrue(any(t['direction']=='OUT' for t in own) and any(t['direction']=='IN' for t in own))
+        spent=sum(t['amountMinor'] for t in every if t['direction']=='OUT' and t['category']!='Daxili köçürmə' and t['createdAt'].startswith(month))
+        self.assertEqual(self.a.send('dashboard')['analytics']['externalMinor'],spent)
+        self.assertEqual(self.a.send('open-banking/consents/'+abb['id']+'/revoke',{})['status'],'REVOKED')
+        # the customer can recategorise an external transaction; others cannot
+        target=next(t for t in txs if t['direction']=='OUT')
+        self.b.send('transactions/'+target['id']+'/category',{'category':'Əyləncə'},status=403)
+        self.a.send('transactions/'+target['id']+'/category',{'category':'Əyləncə'})
+        self.assertEqual(next(t for t in self.a.send('open-banking/transactions') if t['id']==target['id'])['category'],'Əyləncə')
+        # the bank rejects: no data flows
+        second=self.a.send('open-banking/consents',{'bankId':'PASHA'})
+        nonce2,_=hosted(second)
+        self.assertEqual(decide(second,nonce2,'reject'),200)
+        self.assertEqual(self.a.send('open-banking/consents/'+second['id'])['status'],'REJECTED')
+        self.assertEqual(self.a.send('open-banking/consents/'+second['id']+'/sync',{})['synced'],False)
+        self.assertFalse(any(x['bankId']=='PASHA' for x in self.a.send('open-banking/overview')['accounts']))
+        # linking an already linked bank is refused; revoking deletes what was fetched and tells the bank
+        self.a.send('open-banking/consents',{'bankId':'KAPITAL'},status=409)
+        self.b.send('open-banking/consents/'+consent['id']+'/revoke',{},status=403)
+        self.assertEqual(self.a.send('open-banking/consents/'+consent['id']+'/revoke',{})['status'],'REVOKED')
+        after=self.a.send('open-banking/overview')
+        self.assertFalse(any(c['id']==consent['id'] for c in after['consents']))
+        self.assertEqual([t for t in self.a.send('open-banking/transactions') if t['consentId']==consent['id']],[])
+        req=urllib.request.Request(SIM_BASE+'/openbanking/accounts',data=json.dumps({'consentId':consent['simConsentId']}).encode(),headers={'Content-Type':'application/json','X-Api-Key':'kampus-local-simulator-key'})
+        with urllib.request.urlopen(req,timeout=10) as r:self.assertEqual(json.load(r),{'status':'REVOKED','accounts':[]})
+        # the same bank can be linked again after revocation
+        again=self.a.send('open-banking/consents',{'bankId':'KAPITAL'})
+        self.assertEqual(again['status'],'AWAITING_AUTHORIZATION')
+        self.assertEqual(self.a.balance(),wallet_before)
 def wait(url):
     for _ in range(150):
         try:

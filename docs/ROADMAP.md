@@ -20,10 +20,11 @@ Bu sənəd bütün TT-nin tamamlandığını bildirmir. “İşləyir” lokal s
 - USDT pilotu: default OFF flag, mock VASP portfeli, 30 saniyə quote, al/sat və QR ödənişi; mock depozit, ünvan üzrə sadə AML ssenarisi və Travel Rule ilə çıxarış.
 - Büdcə/analitika: kateqoriya üzrə aylıq xərclər, büdcə və hədd bildirişləri, kateqoriyanın dəyişdirilməsi.
 - Admin: monitorinq, fraud/mübahisə, kart köçürmələri, demo KYC reyestri, kripto AML qeydləri, audit, kapital, feature flag və CSV.
+- Açıq bankçılıq (yalnız oxuma): dörd mock bank (Kapital Bank, ABB, PAŞA Bank, Rabitəbank). İstifadəçi bank seçir, bankın öz səhifəsində hansı kart və hesabları paylaşacağını seçib icazə verir. Kampus balans və əməliyyatları çəkir, MCC koduna görə kateqoriyalara ayırır, xərcləri mövcud analitika və büdcələrə mənbə etiketi ilə qatır, büdcə xəbərdarlığı göndərir. Öz hesablar arasında köçürmə xərc sayılmır. İcazə ləğv ediləndə həmin bankdan gətirilən bütün məlumat silinir. Xarici məlumat ledger-ə, kredit scoring-ə və fraud qaydalarına daxil olmur.
 
 ## Tamamlanmış kimi təqdim edilməməli hissələr
 
-- Qeydiyyatda canlılıq və üz uyğunluğu simulyasiya olunur. Checkbox kamera analizi deyil. ML Kit inteqrasiyası və şifrəli foto/video saxlanması yoxdur. KYC qeydləri DEMO_VERIFIED / DEMO_SIMULATED kimi işarələnir; Mock SİMA hüquqi elektron imza deyil.
+- Qeydiyyat brauzerdə kameranı açır. MediaPipe kadrda tək üz olduğunu və serverin verdiyi 3 hərəkətin (sola/sağa çevirmə, göz qırpma, təbəssüm) edildiyini yoxlayır, selfi isə AES-256-GCM ilə şifrələnib bazada saxlanır. Canlılıq nəticəsini müştəri hesablayır və server onu müstəqil yoxlamır (`liveness=CLIENT_REPORTED`); video təkrarından qorunma və reyestr fotosu ilə həqiqi üz tutuşdurma yoxdur, `faceMatchScore` mock-dur. Android tətbiqində kamera yoxlaması hələ yoxdur (react-native-vision-camera və ML Kit lazımdır), ona görə yeni hesab hələlik yalnız brauzerdən açılır. Dövlət reyestri və SİMA mock-dur, SİMA imzası hüquqi elektron imza deyil. SMS göndərilmir: kod test rejimində ekranda göstərilir, real SMS provayderi qoşulmayıb.
 - Bitcoin mədaxil ekranı dizayn prototipidir. Oradakı ünvan/invoice nümunədir; Bitcoin adı ilə AZN balans artırılması bağlanıb. İşləyən kripto axını USDT pilotudur.
 - Rüblük TRA fraud əmsalı hesablanmır və TRA istisnası aktiv deyil. Statik rəqəm real ölçmə kimi göstərilmir.
 - Sonra ödə üçün 14 günlük hesab, KYC/18+, son 30 gündə iki daxilolma və gecikməsiz borc yoxlamaları işləyir. Ödəniş tarixində mövcud və rezervsiz balansdan avtomatik qaytarılır; vəsait çatmayanda OVERDUE, 60 gündən çox gecikəndə BAD olur.
@@ -35,6 +36,7 @@ Bu sənəd bütün TT-nin tamamlandığını bildirmir. “İşləyir” lokal s
 - Deploy PostgreSQL/Flyway istifadə edir; lokal inkişaf üçün H2 dəstəyi saxlanılıb. Bəzi domenlər JSON records-dadır, yazılar DB kilidi ilə ardıcıllaşır. Redis, hesab üzrə ayrıca kilid və 24 saatlıq idempotency təmizlənməsi böyümə üçün ayrıca işdir.
 - Aparat açarı ilə cihaz bağlama, JWT/refresh rotasiyası, fiziki telefonda biometrika/kamera və iki telefonlu demo yoxlanmayıb.
 - Docker/Compose, Caddy HTTPS konfiqurasiyası, ayrıca təsadüfi deploy credential-ları, healthcheck, backup/bərpa, source paketi və release imzalı APK hazırlanıb. Server/domenə faktiki yayımlama istifadəçinin ayrıca göstərişini gözləyir. Video və təqdimat sonraya saxlanıb.
+- Açıq bankçılıq real Mərkəzi Bank platformasına qoşulmayıb: banklar, hesablar və əməliyyatlar `kampus-sim`-də deterministik olaraq yaradılır, bank girişi simulyasiya olunur. Ödəniş başlatma yoxdur, yenilənmə yalnız «Yenilə» düyməsi ilə gedir (arxa plan sinxronizasiyası və webhook yoxdur). İcazə 90 gün etibarlıdır, bitəndə yenidən bağlamaq lazımdır. Hosted razılıq səhifəsi gateway-in `/ob-consent/*` marşrutu ilə açılır.
 
 ## Növbəti iş sırası
 

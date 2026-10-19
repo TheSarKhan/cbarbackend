@@ -14,6 +14,8 @@ public class DeploymentGuard {
   }
   String key=env.getProperty("kampus.sim-key","");
   if(key.length()<32||key.equals("kampus-local-simulator-key"))throw new IllegalStateException("Hosted simulator key must be random and at least 32 characters");
+  String media=env.getProperty("kampus.kyc-media-key","");
+  if(media.length()<32||media.equals(KycMedia.LOCAL_KEY))throw new IllegalStateException("Hosted KYC media key must be random and at least 32 characters");
   if(!env.getProperty("spring.datasource.url","").startsWith("jdbc:postgresql:"))throw new IllegalStateException("Hosted demo requires PostgreSQL");
  }
 }
