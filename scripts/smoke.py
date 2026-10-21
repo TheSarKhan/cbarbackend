@@ -22,6 +22,10 @@ class Client:
     def confirmed(self,path,body):
         return self.send(path,body,proof=self.sca(path,body))
     def balance(self): return self.send('wallet')['availableBalanceMinor']
+    def qr_body(self,payload,amount,source='WALLET',**extra):
+        """A QR payment body with the single-use payment token the server issues when the QR is parsed."""
+        token=self.send('payments/qr/parse',{'qrPayload':payload})['paymentToken']
+        return {'qrPayload':payload,'amountMinor':amount,'fundingSource':source,'paymentToken':token,**extra}
 class Checks(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -67,9 +71,10 @@ class Checks(unittest.TestCase):
     def test_06_qr_crc_replay_refund(self):
         i=self.merchant.send('merchant/qr/dynamic',{'amountMinor':1500});p=i['qrPayload']
         self.a.send('payments/qr/parse',{'qrPayload':p[:-1]+('0' if p[-1]!='0' else '1')},status=422)
-        before=self.a.balance();pay=self.a.send('payments/qr',{'qrPayload':p,'amountMinor':1500,'fundingSource':'WALLET'})
+        late=self.b.qr_body(p,1500)
+        before=self.a.balance();pay=self.a.send('payments/qr',self.a.qr_body(p,1500))
         self.assertEqual(self.a.balance(),before-1500)
-        self.b.send('payments/qr',{'qrPayload':p,'amountMinor':1500,'fundingSource':'WALLET'},status=422)
+        self.b.send('payments/qr',late,status=422)
         self.merchant.send('merchant/payments/'+pay['id']+'/refund',{});self.assertEqual(self.a.balance(),before)
     def test_07_sca_payload_binding_and_replay(self):
         path='transfers';body={'phone':'+994501000002','amountMinor':7000,'note':'test'}
@@ -100,9 +105,9 @@ class Checks(unittest.TestCase):
         self.a.send(path,{},status=422)
     def test_10_bnpl_limit_and_repayment(self):
         i=self.merchant.send('merchant/qr/dynamic',{'amountMinor':4500})
-        self.a.confirmed('payments/qr',{'qrPayload':i['qrPayload'],'amountMinor':4500,'fundingSource':'BNPL'})
+        self.a.confirmed('payments/qr',self.a.qr_body(i['qrPayload'],4500,'BNPL'))
         i=self.merchant.send('merchant/qr/dynamic',{'amountMinor':1000})
-        b={'qrPayload':i['qrPayload'],'amountMinor':1000,'fundingSource':'BNPL'}
+        b=self.a.qr_body(i['qrPayload'],1000,'BNPL')
         self.a.send('payments/qr',b,proof=self.a.sca('payments/qr',b),status=422)
         loan=next(l for l in self.a.send('bnpl/loans') if l['status']=='ACTIVE')
         self.a.confirmed('bnpl/loans/'+loan['id']+'/repay',{})
@@ -116,7 +121,7 @@ class Checks(unittest.TestCase):
         self.assertEqual(self.a.balance(),before-1700);self.assertEqual(self.a.send('crypto/portfolio')['balanceMicro'],initial+10000000)
         self.a.send('crypto/orders',{'quoteId':q['id'],'riskAccepted':True},status=422)
         i=self.merchant.send('merchant/qr/dynamic',{'amountMinor':1700})
-        self.a.confirmed('payments/qr',{'qrPayload':i['qrPayload'],'amountMinor':1700,'fundingSource':'CRYPTO','riskAccepted':True})
+        self.a.confirmed('payments/qr',self.a.qr_body(i['qrPayload'],1700,'CRYPTO',riskAccepted=True))
         self.assertEqual(self.a.send('crypto/portfolio')['balanceMicro'],initial)
     def test_11b_expired_crypto_quote(self):
         before=self.a.balance()
@@ -247,8 +252,8 @@ class Checks(unittest.TestCase):
         self.assertEqual(self.a.send('auth/login',{'phone':'+994509998877','pin':'4821','deviceId':'demo-device'})['user']['pinLength'],4)
         self.a.send('auth/login',{'phone':'+994509998877','pin':'1234','deviceId':'demo-device'},status=401)
         ov=self.admin.send('admin/overview')
-        kyc=[k for k in ov['kycRecords'] if k.get('fin')=='7AZ5544']
-        self.assertTrue(kyc and kyc[0]['status']=='DEMO_VERIFIED' and kyc[0]['liveness']=='CLIENT_REPORTED' and kyc[0]['mediaStored'] is True and kyc[0]['idSeries']=='AZE12345678')
+        kyc=[k for k in ov['kycRecords'] if k.get('finMasked')=='7••••44']
+        self.assertTrue(kyc and kyc[0]['status']=='DEMO_VERIFIED' and kyc[0]['liveness']=='CLIENT_REPORTED' and kyc[0]['mediaStored'] is True and kyc[0]['idSeriesMasked']=='A••••••••78' and 'fin' not in kyc[0] and 'idSeries' not in kyc[0])
         # the same FIN or ID series cannot open a second account
         otp2=self.a.send('auth/otp',{'phone':'+994509998866'})
         self.a.send('auth/otp/verify',{'otpId':otp2['otpId'],'otp':otp2['demoCode']})
@@ -504,6 +509,37 @@ class Checks(unittest.TestCase):
         # large card transfers and QR payments go through the same gate
         qr_total=self.a.send('auth/sca',{'pin':'123456','payload':{'action':'card-transfers','data':{'amountMinor':70000,'totalMinor':70350}}})
         self.assertTrue(qr_total['kycRequired'])
+    def test_31_qr_payment_tokens_are_single_use_scoped_and_bound(self):
+        static=self.merchant.send('merchant/qr/static')['qrPayload']
+        dynamic=self.merchant.send('merchant/qr/dynamic',{'amountMinor':300})['qrPayload']
+        # no token, a made-up token and somebody else's token are all refused
+        self.a.send('payments/qr',{'qrPayload':static,'amountMinor':100,'fundingSource':'WALLET'},status=422)
+        self.a.send('payments/qr',{'qrPayload':static,'amountMinor':100,'fundingSource':'WALLET','paymentToken':'pt_made_up'},status=422)
+        theirs=self.b.qr_body(static,100)
+        self.a.send('payments/qr',theirs,status=422)
+        # a token is bound to the QR it was issued for
+        other=self.a.qr_body(dynamic,300)
+        self.a.send('payments/qr',{**other,'qrPayload':static,'amountMinor':100},status=422)
+        # the payment spends it: the same token cannot pay twice, and the token is not stored in the clear
+        before=self.a.balance();body=self.a.qr_body(static,100)
+        self.assertTrue(body['paymentToken'].startswith('pt_'))
+        self.a.send('payments/qr',body)
+        self.assertEqual(self.a.balance(),before-100)
+        self.assertEqual(self.a.send('payments/qr',body,status=409)['code'],'TOKEN_USED')
+        self.assertEqual(self.a.balance(),before-100)
+        # a refused payment does not burn the token (the whole request rolls back)
+        self.a.send('payments/qr',{**other,'amountMinor':301},status=422)
+        self.a.send('payments/qr',other)
+        self.assertEqual(self.a.balance(),before-400)
+    def test_32_national_ids_are_stored_as_tokens(self):
+        records=self.admin.send('admin/overview')['kycRecords']
+        self.assertTrue(records)
+        for k in records:
+            self.assertNotIn('fin',k);self.assertNotIn('idSeries',k)
+        seeded=next(k for k in records if k['userId']=='u1')
+        self.assertTrue(seeded['finToken'].startswith('tok_fin_'))
+        self.assertIn('•',seeded['finMasked']);self.assertNotIn('7AZ1234',json.dumps(records))
+
 def wait(url):
     for _ in range(150):
         try:

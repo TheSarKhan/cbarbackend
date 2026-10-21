@@ -6,10 +6,10 @@ import java.util.*;
 import java.time.*;
 import static az.kampus.Store.*;
 @Service public class Auth {
- final Store s; final Ledger l; final Simulator sim; final KycMedia media; final Argon2PasswordEncoder hash=Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8();
+ final Store s; final Ledger l; final Simulator sim; final KycMedia media; final Tokens tokens; final Argon2PasswordEncoder hash=Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8();
  /** From this amount up (qəpik) a confirmed PIN is not enough: the customer must also pass a fresh face check. */
  final long kycStepUpMinor;
- Auth(Store s,Ledger l,Simulator sim,KycMedia media,@org.springframework.beans.factory.annotation.Value("${kampus.kyc-step-up-minor:50000}")long kycStepUpMinor){this.s=s;this.l=l;this.sim=sim;this.media=media;this.kycStepUpMinor=kycStepUpMinor;}
+ Auth(Store s,Ledger l,Simulator sim,KycMedia media,Tokens tokens,@org.springframework.beans.factory.annotation.Value("${kampus.kyc-step-up-minor:50000}")long kycStepUpMinor){this.s=s;this.l=l;this.sim=sim;this.media=media;this.tokens=tokens;this.kycStepUpMinor=kycStepUpMinor;}
  /** Largest money amount a confirmation payload ({action,data}) moves; 0 when it carries none. */
  long payloadAmount(Object payload){
   if(!(payload instanceof Map<?,?> wrapper)||!(wrapper.get("data") instanceof Map<?,?> data))return 0;
@@ -91,8 +91,8 @@ import static az.kampus.Store.*;
   Object issued=o.get("livenessActions"),done=b.get("livenessActions");
   Problem.require(issued!=null&&issued.equals(done),"LIVENESS_REQUIRED","Canlılıq hərəkətlərini kamerada tamamlayın.");
   byte[] selfie=KycMedia.parseSelfie(str(b,"selfie"));
-  Problem.require(s.list("KYC",null).stream().noneMatch(k->fin.equalsIgnoreCase(str(k,"fin"))),"FIN_EXISTS","Bu FİN ilə artıq hesab mövcuddur.");
-  Problem.require(s.list("KYC",null).stream().noneMatch(k->series.equalsIgnoreCase(str(k,"idSeries"))),"ID_SERIES_EXISTS","Bu ŞV seriyası ilə artıq hesab mövcuddur.");
+  Problem.require(s.list("KYC",null).stream().noneMatch(k->tokens.has(k,"fin","fin",fin)),"FIN_EXISTS","Bu FİN ilə artıq hesab mövcuddur.");
+  Problem.require(s.list("KYC",null).stream().noneMatch(k->tokens.has(k,"idSeries","series",series)),"ID_SERIES_EXISTS","Bu ŞV seriyası ilə artıq hesab mövcuddur.");
   var reg=sim.call("/registry/lookup",m("fin",fin,"idSeries",series,"birthDate",str(b,"birthDate")));
   double faceScore=((Number)reg.getOrDefault("faceMatchScore",0.96)).doubleValue();
   Problem.require(faceScore>=0.80,"REJECTED_FACE_MATCH","Üz tutuşdurma balı aşağıdır (< 0.80).");
@@ -103,7 +103,7 @@ import static az.kampus.Store.*;
   String user=id();s.db.update("INSERT INTO users(id,phone,name,pin_hash,role,device_id,birth_date,created_at,pin_length) VALUES(?,?,?,?,?,?,?,?,4)",user,phone,name,hash.encode(pin),"USER",device,birth.toString(),now());l.account("wallet:"+user,"C");o.put("used",true);s.save("OTP",o);
   s.add("CONSENT",user,m("type","TERMS_AND_DATA","version","1","acceptedAt",now()));
   String mediaId=media.store(user,"SELFIE","image/jpeg",selfie);
-  s.add("KYC",user,m("userId",user,"userName",name,"firstName",first,"lastName",last,"phone",phone,"fin",fin,"idSeries",series,"status","DEMO_VERIFIED","provider","MOCK_REGISTRY_SIMA","liveness","CLIENT_REPORTED","livenessProvider",mode,"livenessActions",done,"faceMatchScore",faceScore,"contractId",sima.get("contractId"),"signatureHash",sima.get("signatureHash"),"mediaStored",true,"selfieMediaId",mediaId,"selfieSha256",KycMedia.sha256(selfie),"birthDate",birth.toString()));
+  s.add("KYC",user,tokens.protectedRecord(m("userId",user,"userName",name,"firstName",first,"lastName",last,"phone",phone,"fin",fin,"idSeries",series,"status","DEMO_VERIFIED","provider","MOCK_REGISTRY_SIMA","liveness","CLIENT_REPORTED","livenessProvider",mode,"livenessActions",done,"faceMatchScore",faceScore,"contractId",sima.get("contractId"),"signatureHash",sima.get("signatureHash"),"mediaStored",true,"selfieMediaId",mediaId,"selfieSha256",KycMedia.sha256(selfie),"birthDate",birth.toString())));
   return login(m("phone",phone,"pin",pin,"deviceId",device));
  }
  @Transactional(noRollbackFor=CredentialFailure.class) public Map<String,Object> sca(User u,Map<String,Object>b){s.lock();
