@@ -5,6 +5,7 @@ import jakarta.servlet.http.*;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /** Bounded per-peer auth rate limit. The proxy's shared budget is intentional. */
@@ -15,9 +16,9 @@ public class RequestGuard extends OncePerRequestFilter {
  @Override protected void doFilterInternal(HttpServletRequest req,HttpServletResponse res,FilterChain chain)throws ServletException,IOException{
   res.setHeader("X-Content-Type-Options","nosniff");
   res.setHeader("Cache-Control","no-store");
-  long limit=req.getRequestURI().equals("/api/v1/auth/register")?524288:131072;
+  long limit=Set.of("/api/v1/auth/register","/api/v1/auth/sca/kyc").contains(req.getRequestURI())?524288:131072;
   if(req.getContentLengthLong()>limit){reject(res,413,"REQUEST_TOO_LARGE");return;}
-  if(req.getRequestURI().startsWith("/api/v1/auth/")&&!req.getRequestURI().equals("/api/v1/auth/sca")){
+  if(req.getRequestURI().startsWith("/api/v1/auth/")&&!req.getRequestURI().equals("/api/v1/auth/sca")&&!req.getRequestURI().equals("/api/v1/auth/sca/kyc")){
    long minute=System.currentTimeMillis()/60000;
    if(windows.size()>10000)windows.entrySet().removeIf(e->e.getValue().minute()<minute);
    if(windows.size()>=10000&&!windows.containsKey(req.getRemoteAddr())){reject(res,429,"RATE_LIMIT");return;}

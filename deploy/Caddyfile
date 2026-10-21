@@ -6,11 +6,12 @@
   X-Frame-Options DENY
   Permissions-Policy "camera=(self), microphone=(), geolocation=()"
  }
- @notRegister not path /api/v1/auth/register
- request_body @notRegister {
+ @selfie path /api/v1/auth/register /api/v1/auth/sca/kyc
+ @noSelfie not path /api/v1/auth/register /api/v1/auth/sca/kyc
+ request_body @noSelfie {
   max_size 128KB
  }
- request_body /api/v1/auth/register {
+ request_body @selfie {
   max_size 600KB
  }
  handle /api/* {

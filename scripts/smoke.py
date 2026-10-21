@@ -456,6 +456,54 @@ class Checks(unittest.TestCase):
         again=self.a.send('open-banking/consents',{'bankId':'KAPITAL'})
         self.assertEqual(again['status'],'AWAITING_AUTHORIZATION')
         self.assertEqual(self.a.balance(),wallet_before)
+    def test_30_large_payments_need_a_fresh_face_check(self):
+        import base64
+        selfie='data:image/jpeg;base64,'+base64.b64encode((pathlib.Path(__file__).resolve().parent/'fixtures'/'selfie.jpg').read_bytes()).decode()
+        self.a.send('topups',{'amountMinor':60000,'source':'CARD'})
+        before=self.a.balance()
+        body={'phone':'+994501000002','amountMinor':55000,'note':'kyc step-up'}
+        # a PIN is required, even for a recipient the customer already trusts
+        self.a.send('transfers',body,status=403)
+        # a small payment still needs only the PIN
+        small=self.a.send('auth/sca',{'pin':'123456','payload':{'action':'transfers','data':{**body,'amountMinor':100}}})
+        self.assertFalse(small['kycRequired'])
+        self.assertNotIn('kycActions',small)
+        # a large one asks for a face check with three server-chosen actions
+        sca=self.a.send('auth/sca',{'pin':'123456','payload':{'action':'transfers','data':body}})
+        self.assertTrue(sca['kycRequired'])
+        self.assertEqual(len(sca['kycActions']),3)
+        proof=sca['proof']
+        # the PIN alone does not move the money
+        self.a.send('transfers',body,proof=proof,status=403)
+        kyc={'proof':proof,'selfie':selfie,'livenessMode':'MEDIAPIPE_WEB','livenessActions':sca['kycActions'],'facesCount':1}
+        for patch in ({'livenessActions':['BLINK']},{'facesCount':2},{'livenessMode':'MANUAL'},{'selfie':''}):
+            self.a.send('auth/sca/kyc',{**kyc,**patch},status=422)
+        self.b.send('auth/sca/kyc',kyc,status=403)   # nobody else can complete someone's check
+        self.assertTrue(self.a.send('auth/sca/kyc',kyc)['kycDone'])
+        self.a.send('auth/sca/kyc',kyc,status=422)   # and it cannot be completed twice
+        # the proof stays bound to the amount and recipient that were confirmed
+        self.a.send('transfers',{**body,'amountMinor':54000},proof=proof,status=422)
+        done=self.a.send('transfers',body,proof=proof)
+        self.assertIn(done['status'],('SCHEDULED','UNDER_REVIEW'))
+        self.assertEqual(self.a.balance(),before-55000)
+        # one confirmation, one payment
+        self.a.send('transfers',body,proof=proof,status=422)
+        # a face check is not offered for a proof that never needed one
+        self.a.send('auth/sca/kyc',{**kyc,'proof':small['proof']},status=422)
+        # a risky device does not skip the check: this transfer would go to manual review, and still needs PIN + face first
+        if self.a.balance()<60000:self.a.send('topups',{'amountMinor':60000,'source':'CARD'})
+        phone=Client('+994501000001',device='new-phone-kyc')
+        risky={'phone':'+994501000002','amountMinor':56000,'note':'kyc on a new device'}
+        phone.send('transfers',risky,status=403)
+        risky_sca=phone.send('auth/sca',{'pin':'123456','payload':{'action':'transfers','data':risky}})
+        self.assertTrue(risky_sca['kycRequired'])
+        phone.send('transfers',risky,proof=risky_sca['proof'],status=403)
+        phone.send('auth/sca/kyc',{'proof':risky_sca['proof'],'selfie':selfie,'livenessMode':'MEDIAPIPE_WEB','livenessActions':risky_sca['kycActions'],'facesCount':1})
+        queued=phone.send('transfers',risky,proof=risky_sca['proof'])
+        self.assertEqual(queued['status'],'UNDER_REVIEW')
+        # large card transfers and QR payments go through the same gate
+        qr_total=self.a.send('auth/sca',{'pin':'123456','payload':{'action':'card-transfers','data':{'amountMinor':70000,'totalMinor':70350}}})
+        self.assertTrue(qr_total['kycRequired'])
 def wait(url):
     for _ in range(150):
         try:

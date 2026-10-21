@@ -59,7 +59,10 @@ class DebtWorkerTests {
   assertEquals(200,num(s.get("CARD","card-demo"),"spentMinor"));
  }
  @Test void scoringUsesLedgerHistoryInsteadOfFixedIncome(){
-  var scoring=policy.scoring("u1");assertEquals(3,num(scoring,"activeMonths"));assertEquals(52480/3,num(scoring,"averageIncomeMinor"));
+  var scoring=policy.scoring("u1");
+  // The seed books top-ups 65, 20 and 10 days ago; how many calendar months that spans depends on today's date.
+  long seededMonths=java.util.stream.Stream.of(65,20,10).map(days->java.time.YearMonth.from(Instant.now().minus(Duration.ofDays(days)).atZone(ZoneOffset.UTC))).distinct().count();
+  assertTrue(seededMonths>=2);assertEquals(seededMonths,num(scoring,"activeMonths"));assertEquals(52480/3,num(scoring,"averageIncomeMinor"));
   s.db.update("DELETE FROM records WHERE kind='TX' AND owner_id='u1'");
   assertEquals(0,num(policy.scoring("u1"),"averageIncomeMinor"));assertEquals(0,num(policy.scoring("u1"),"activeMonths"));
  }

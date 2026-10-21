@@ -7,7 +7,22 @@ import java.time.*;
 import static az.kampus.Store.*;
 @Service public class Auth {
  final Store s; final Ledger l; final Simulator sim; final KycMedia media; final Argon2PasswordEncoder hash=Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8();
- Auth(Store s,Ledger l,Simulator sim,KycMedia media){this.s=s;this.l=l;this.sim=sim;this.media=media;}
+ /** From this amount up (qəpik) a confirmed PIN is not enough: the customer must also pass a fresh face check. */
+ final long kycStepUpMinor;
+ Auth(Store s,Ledger l,Simulator sim,KycMedia media,@org.springframework.beans.factory.annotation.Value("${kampus.kyc-step-up-minor:50000}")long kycStepUpMinor){this.s=s;this.l=l;this.sim=sim;this.media=media;this.kycStepUpMinor=kycStepUpMinor;}
+ /** Largest money amount a confirmation payload ({action,data}) moves; 0 when it carries none. */
+ long payloadAmount(Object payload){
+  if(!(payload instanceof Map<?,?> wrapper)||!(wrapper.get("data") instanceof Map<?,?> data))return 0;
+  long largest=0;
+  for(String key:new String[]{"amountMinor","totalMinor"}){
+   Object value=data.get(key);if(value==null)continue;
+   try{largest=Math.max(largest,new java.math.BigDecimal(value.toString()).longValueExact());}catch(Exception ignored){}
+  }
+  return largest;
+ }
+ boolean needsKyc(Object payload){return payloadAmount(payload)>=kycStepUpMinor;}
+ /** Other beans call this through Spring's proxy, so read the limit with a method: a field read on the proxy would see 0. */
+ long kycLimit(){return kycStepUpMinor;}
  static String sha256(String v){try{var md=java.security.MessageDigest.getInstance("SHA-256");return java.util.HexFormat.of().formatHex(md.digest(v.getBytes(java.nio.charset.StandardCharsets.UTF_8)));}catch(Exception e){throw new RuntimeException(e);}}
  record User(String id,String name,String phone,String role,String device,int pinLength){User(String id,String name,String phone,String role,String device){this(id,name,phone,role,device,6);}}
  Map<String,Object> publicUser(User u){return m("id",u.id,"name",u.name,"phone",u.phone,"role",u.role,"pinLength",u.pinLength);}
@@ -94,12 +109,28 @@ import static az.kampus.Store.*;
  @Transactional(noRollbackFor=CredentialFailure.class) public Map<String,Object> sca(User u,Map<String,Object>b){s.lock();
   if(!pin(u.id,str(b,"pin"))){failure(u.id);throw new CredentialFailure("PIN yanlışdır.");}
   s.db.update("UPDATE users SET failed_attempts=0 WHERE id=?",u.id);
-  var proof=s.add("SCA",u.id,m("payload",b.get("payload"),"expiresAt",System.currentTimeMillis()+60_000,"used",false,"deviceId",u.device));
-  s.audit(u.id,"SCA_PIN_CONFIRMED",b.get("payload"));return m("proof",proof.get("id"));
+  boolean kyc=needsKyc(b.get("payload"));
+  var actions=new ArrayList<>(List.of("TURN_LEFT","TURN_RIGHT","BLINK","SMILE"));Collections.shuffle(actions);
+  var proof=s.add("SCA",u.id,m("payload",b.get("payload"),"expiresAt",System.currentTimeMillis()+(kyc?180_000:60_000),"used",false,"deviceId",u.device,"kycRequired",kyc,"kycDone",false,"kycActions",kyc?new ArrayList<>(actions.subList(0,3)):List.of()));
+  s.audit(u.id,"SCA_PIN_CONFIRMED",b.get("payload"));
+  return kyc?m("proof",proof.get("id"),"kycRequired",true,"kycActions",proof.get("kycActions")):m("proof",proof.get("id"),"kycRequired",false);
+ }
+ /** Second factor for large amounts: a fresh liveness check. The selfie is kept encrypted as evidence for this payment. */
+ @Transactional Map<String,Object> kycConfirm(User u,Map<String,Object> b){s.lock();
+  var p=s.own("SCA",str(b,"proof"),u.id);
+  Problem.require(yes(p,"kycRequired")&&!yes(p,"kycDone")&&!yes(p,"used")&&num(p,"expiresAt")>System.currentTimeMillis()&&str(p,"deviceId").equals(u.device),"KYC_NOT_PENDING","Üz təsdiqi tələb olunmur və ya vaxtı bitib.");
+  Problem.require("MEDIAPIPE_WEB".equals(str(b,"livenessMode")),"LIVENESS_REQUIRED","Kamera ilə canlılıq yoxlamasını tamamlayın.");
+  Problem.require(p.get("kycActions").equals(b.get("livenessActions")),"LIVENESS_REQUIRED","Canlılıq hərəkətlərini kamerada tamamlayın.");
+  Problem.require(b.containsKey("facesCount")&&num(b,"facesCount")==1,"MULTIPLE_FACES","Kadrda yalnız 1 üz olmalıdır.");
+  byte[] selfie=KycMedia.parseSelfie(str(b,"selfie"));
+  String mediaId=media.store(u.id,"PAYMENT_SELFIE","image/jpeg",selfie);
+  p.put("kycDone",true);p.put("kycMediaId",mediaId);p.put("expiresAt",System.currentTimeMillis()+90_000);s.save("SCA",p);
+  s.audit(u.id,"KYC_STEP_UP_CONFIRMED",m("proof",p.get("id"),"mediaId",mediaId,"selfieSha256",KycMedia.sha256(selfie),"payload",p.get("payload")));
+  return m("proof",p.get("id"),"kycDone",true);
  }
  void failure(String user){var r=s.db.queryForMap("SELECT failed_attempts FROM users WHERE id=?",user);int n=((Number)r.get("failed_attempts")).intValue()+1;s.db.update("UPDATE users SET failed_attempts=?,locked_until=? WHERE id=?",n,n>=3?System.currentTimeMillis()+1_800_000:0,user);if(n>=3){s.db.update("DELETE FROM sessions WHERE user_id=?",user);s.add("NOTIFICATION",user,m("title","Hesab bloklandı","body","3 səhv PIN cəhdi. Hesabınız 30 dəqiqəlik bloklandı.","read",false));s.audit(user,"PIN_LOCKOUT",m("attempts",n));}}
  void requireSca(User u,String proof,String action,Map<String,Object> payload){if(proof==null||proof.isBlank())throw new Problem(403,"SCA_REQUIRED","Məbləğ və alanı PIN ilə təsdiqləyin.");
   var p=s.own("SCA",proof,u.id);Problem.require(!yes(p,"used")&&num(p,"expiresAt")>System.currentTimeMillis()&&str(p,"deviceId").equals(u.device),"SCA_EXPIRED","Təsdiqin vaxtı bitib.");
-  var expected=m("action",action,"data",payload);Problem.require(s.encode(p.get("payload")).equals(s.encode(expected)),"SCA_BINDING_MISMATCH","Təsdiq məbləğə və alana uyğun gəlmir.");p.put("used",true);s.save("SCA",p);for(var counter:s.list("EXEMPT_COUNTER",u.id)){counter.put("count",0);counter.put("sumMinor",0);s.save("EXEMPT_COUNTER",counter);}
+  var expected=m("action",action,"data",payload);Problem.require(s.encode(p.get("payload")).equals(s.encode(expected)),"SCA_BINDING_MISMATCH","Təsdiq məbləğə və alana uyğun gəlmir.");if(needsKyc(expected)&&!yes(p,"kycDone"))throw new Problem(403,"KYC_REQUIRED","Böyük məbləğ üçün üzünüzü də təsdiqləyin.");p.put("used",true);s.save("SCA",p);for(var counter:s.list("EXEMPT_COUNTER",u.id)){counter.put("count",0);counter.put("sumMinor",0);s.save("EXEMPT_COUNTER",counter);}
  }
 }
