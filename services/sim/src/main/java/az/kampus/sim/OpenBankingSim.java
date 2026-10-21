@@ -37,7 +37,6 @@ public class OpenBankingSim {
     static final LocalDate ANCHOR=LocalDate.of(2026,1,1); // balances are anchored here so new bookings move them consistently
 
     @Value("${kampus.ob-state-file:.local/open-banking.json}") String stateFile;
-    @Value("${kampus.ob-consent-days:90}") int consentDays;
     final SimApplication app;
     final Map<String,Map<String,Object>> consents=new LinkedHashMap<>();
     OpenBankingSim(SimApplication app){this.app=app;}
@@ -78,15 +77,18 @@ public class OpenBankingSim {
         return BANKS.stream().filter(b->b.get("id").equals(id)).findFirst().orElseThrow(()->new ResponseStatusException(HttpStatus.NOT_FOUND,"BANK_NOT_FOUND"));
     }
 
-    /** Every customer has a debit card and a current account at each bank. */
+    /** Every customer has a debit card, a virtual card and a current account at each bank. */
     List<Account> accounts(String bankId,String userRef){
         var r=random(bankId+"|"+userRef+"|profile");
         String prefix=bankId.toLowerCase(Locale.ROOT)+"-"+shortHash(userRef);
         String last4=String.format("%04d",r.nextInt(10000)),tail=String.format("%04d",r.nextInt(10000));
         String brand=r.nextBoolean()?"VISA":"MASTERCARD";
         long cardBase=20_000+r.nextInt(40_000),currentBase=90_000+r.nextInt(160_000);
+        String lastB=String.format("%04d",r.nextInt(10000)),brandB=brand.equals("VISA")?"MASTERCARD":"VISA";
+        long cardBaseB=15_000+r.nextInt(30_000);
         return List.of(
             new Account(prefix+"-card",bankId,"CARD","Debet kart · "+brand,"•••• "+last4,brand,cardBase),
+            new Account(prefix+"-card2",bankId,"CARD","Virtual kart · "+brandB,"•••• "+lastB,brandB,cardBaseB),
             new Account(prefix+"-current",bankId,"CURRENT","Cari hesab","AZ•• •••• •••• "+tail,"",currentBase));
     }
 
@@ -165,15 +167,112 @@ public class OpenBankingSim {
 
     @PostMapping("/openbanking/banks") Object banks(@RequestHeader("X-Api-Key")String key){app.authorize(key);return Map.of("banks",BANKS);}
 
-    @PostMapping("/openbanking/consents") synchronized Object create(@RequestHeader("X-Api-Key")String key,@RequestBody Map<String,Object> b){
+    static final List<Integer> MONTHS=List.of(1,2,3,6,12);
+    static final long MIN_LIMIT_MINOR=1_000,MAX_LIMIT_MINOR=1_000_000;
+
+    /** The bank knows a person by phone and FİN. The seeded demo people bank everywhere; for anyone else roughly three banks in four know them. */
+    static boolean isCustomer(String bankId,String phone,String fin){
+        if(phone.matches("\\+99450100000[0-9]"))return true;
+        return random(bankId+"|customer|"+fin).nextInt(4)!=0;
+    }
+    static List<Map<String,Object>> cardView(List<Account> accounts,long now,OpenBankingSim sim,Map<String,Object> c){
+        return accounts.stream().map(a->{
+            var m=new LinkedHashMap<String,Object>();
+            m.put("id",a.id());m.put("type",a.type());m.put("name",a.name());m.put("masked",a.masked());m.put("brand",a.brand());m.put("currency","AZN");
+            m.put("balanceMinor",sim.availableBalance(a,c,Instant.ofEpochMilli(now)));
+            return (Map<String,Object>)m;
+        }).toList();
+    }
+
+    /**
+     * Kampus asks the bank to open a data and payment consent for a person. The bank looks the person up by phone and FİN;
+     * a customer gets a push notification in the bank app, a stranger gets "not a customer".
+     */
+    @PostMapping("/openbanking/request") synchronized Object request(@RequestHeader("X-Api-Key")String key,@RequestBody Map<String,Object> b){
         app.authorize(key);
-        String bankId=text(b,"bankId"),userRef=text(b,"userRef");
-        bank(bankId);
-        if(userRef.isBlank())throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"USER_REQUIRED");
+        String bankId=text(b,"bankId"),userRef=text(b,"userRef"),phone=text(b,"phone"),fin=text(b,"fin");
+        var bank=bank(bankId);
+        if(userRef.isBlank()||phone.isBlank()||fin.isBlank())throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"IDENTITY_REQUIRED");
+        if(!isCustomer(bankId,phone,fin))return Map.of("customer",false);
+        for(var old:consents.values())if(bankId.equals(old.get("bankId"))&&userRef.equals(old.get("userRef"))&&"AWAITING_AUTHORIZATION".equals(old.get("status")))old.put("status","EXPIRED");
         String id=UUID.randomUUID().toString();
-        consents.put(id,new LinkedHashMap<>(Map.of("id",id,"bankId",bankId,"userRef",userRef,"status","AWAITING_AUTHORIZATION","nonce",UUID.randomUUID().toString(),"createdAt",System.currentTimeMillis(),"pageExpiresAt",System.currentTimeMillis()+900_000,"accountIds",List.of())));
+        var c=new LinkedHashMap<String,Object>();
+        c.put("id",id);c.put("bankId",bankId);c.put("userRef",userRef);c.put("phone",phone);c.put("status","AWAITING_AUTHORIZATION");c.put("step","NOTIFIED");
+        c.put("createdAt",System.currentTimeMillis());c.put("pageExpiresAt",System.currentTimeMillis()+3_600_000);c.put("accountIds",new ArrayList<String>());c.put("charges",new ArrayList<Map<String,Object>>());
+        consents.put(id,c);persist();
+        return Map.of("customer",true,"consentId",id,
+            "notification",Map.of("title",bank.get("name"),"body","Kampus tətbiqi hesab və kartlarınıza baxış və ödəniş icazəsi istəyir. Ətraflı baxmaq üçün toxunun."),
+            "cards",cardView(accounts(bankId,userRef),System.currentTimeMillis(),this,c),"allowedMonths",MONTHS);
+    }
+
+    /** The customer picks cards, how long the permission lasts and the monthly spending limit inside the bank app. */
+    @PostMapping("/openbanking/select") synchronized Object select(@RequestHeader("X-Api-Key")String key,@RequestBody Map<String,Object> b){
+        app.authorize(key);
+        var c=consent(text(b,"consentId"));
+        if(!"AWAITING_AUTHORIZATION".equals(c.get("status")))throw new ResponseStatusException(HttpStatus.CONFLICT,"CONSENT_NOT_OPEN");
+        var valid=accounts(text(c,"bankId"),text(c,"userRef")).stream().map(Account::id).toList();
+        @SuppressWarnings("unchecked") var raw=(List<Object>)b.getOrDefault("accountIds",List.of());
+        var chosen=raw.stream().map(Object::toString).filter(valid::contains).distinct().toList();
+        if(chosen.isEmpty())throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,"NO_ACCOUNT_SELECTED");
+        int months;long limit;
+        try{months=Integer.parseInt(text(b,"months"));limit=Long.parseLong(text(b,"monthlyLimitMinor"));}catch(NumberFormatException e){throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,"INVALID_TERMS");}
+        if(!MONTHS.contains(months)||limit<MIN_LIMIT_MINOR||limit>MAX_LIMIT_MINOR)throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,"INVALID_TERMS");
+        c.put("accountIds",new ArrayList<>(chosen));c.put("months",months);c.put("monthlyLimitMinor",limit);c.put("step","SELECTED");persist();
+        return Map.of("step","SELECTED","accountIds",chosen,"months",months,"monthlyLimitMinor",limit);
+    }
+
+    /** The signed consent document switches the permission on. */
+    @PostMapping("/openbanking/sign") synchronized Object sign(@RequestHeader("X-Api-Key")String key,@RequestBody Map<String,Object> b){
+        app.authorize(key);
+        var c=consent(text(b,"consentId"));
+        if(!"AWAITING_AUTHORIZATION".equals(c.get("status"))||!"SELECTED".equals(c.get("step")))throw new ResponseStatusException(HttpStatus.CONFLICT,"CONSENT_NOT_READY");
+        if(text(b,"signatureHash").isBlank()||text(b,"contractId").isBlank())throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"SIGNATURE_REQUIRED");
+        long now=System.currentTimeMillis(),months=((Number)c.get("months")).longValue();
+        c.put("status","AUTHORIZED");c.put("step","SIGNED");c.put("authorizedAt",now);c.put("expiresAt",text(b,"expiresAt").isBlank()?now+months*30L*86_400_000L:Long.parseLong(text(b,"expiresAt")));
+        c.put("contractId",text(b,"contractId"));c.put("signatureHash",text(b,"signatureHash"));persist();
+        return Map.of("status","AUTHORIZED","expiresAt",c.get("expiresAt"));
+    }
+
+    static long monthSpent(Map<String,Object> c){
+        String month=LocalDate.now(ZoneOffset.UTC).toString().substring(0,7);
+        @SuppressWarnings("unchecked") var charges=(List<Map<String,Object>>)c.getOrDefault("charges",List.of());
+        return charges.stream().filter(x->!Boolean.TRUE.equals(x.get("reversed"))&&text(x,"at").startsWith(month)).mapToLong(x->((Number)x.get("amountMinor")).longValue()).sum();
+    }
+    static long charged(Map<String,Object> c,String accountId){
+        @SuppressWarnings("unchecked") var charges=(List<Map<String,Object>>)c.getOrDefault("charges",List.of());
+        return charges.stream().filter(x->!Boolean.TRUE.equals(x.get("reversed"))&&accountId.equals(x.get("accountId"))).mapToLong(x->((Number)x.get("amountMinor")).longValue()).sum();
+    }
+    long availableBalance(Account a,Map<String,Object> c,Instant now){return Math.max(0,balance(a,now)-charged(c,a.id()));}
+
+    /** Kampus pays out of a shared card. The bank enforces what the customer agreed to: selected card, monthly limit, balance. */
+    @PostMapping("/openbanking/charge") synchronized Object charge(@RequestHeader("X-Api-Key")String key,@RequestBody Map<String,Object> b){
+        app.authorize(key);
+        var c=consent(text(b,"consentId"));
+        if(!"AUTHORIZED".equals(c.get("status")))return Map.of("declined",true,"code","CONSENT_INACTIVE");
+        if(c.get("monthlyLimitMinor")==null)return Map.of("declined",true,"code","PAYMENTS_NOT_ALLOWED"); // linked before payments existed: read-only
+        String accountId=text(b,"accountId");
+        @SuppressWarnings("unchecked") var allowed=(List<String>)c.get("accountIds");
+        if(!allowed.contains(accountId))return Map.of("declined",true,"code","ACCOUNT_NOT_SHARED");
+        long amount=Long.parseLong(text(b,"amountMinor"));
+        if(amount<=0)return Map.of("declined",true,"code","INVALID_AMOUNT");
+        long limit=((Number)c.get("monthlyLimitMinor")).longValue(),spent=monthSpent(c);
+        if(spent+amount>limit)return Map.of("declined",true,"code","LIMIT_EXCEEDED","monthlyLimitMinor",limit,"monthlySpentMinor",spent);
+        var account=accounts(text(c,"bankId"),text(c,"userRef")).stream().filter(a->a.id().equals(accountId)).findFirst().orElseThrow();
+        long available=availableBalance(account,c,Instant.now());
+        if(available<amount)return Map.of("declined",true,"code","INSUFFICIENT_FUNDS","availableMinor",available);
+        String id="chg-"+UUID.randomUUID().toString().substring(0,12);
+        @SuppressWarnings("unchecked") var charges=(List<Map<String,Object>>)c.get("charges");
+        charges.add(new LinkedHashMap<>(Map.of("id",id,"accountId",accountId,"amountMinor",amount,"reference",text(b,"reference"),"at",Instant.now().toString())));
         persist();
-        return Map.of("consentId",id,"authorizationPath","/ob-consent/"+id);
+        return Map.of("declined",false,"chargeId",id,"balanceAfterMinor",available-amount,"monthlySpentMinor",spent+amount,"monthlyLimitMinor",limit);
+    }
+
+    @PostMapping("/openbanking/reverse") synchronized Object reverse(@RequestHeader("X-Api-Key")String key,@RequestBody Map<String,Object> b){
+        app.authorize(key);
+        var c=consent(text(b,"consentId"));
+        @SuppressWarnings("unchecked") var charges=(List<Map<String,Object>>)c.getOrDefault("charges",List.of());
+        for(var x:charges)if(text(b,"chargeId").equals(text(x,"id"))){x.put("reversed",true);persist();return Map.of("reversed",true);}
+        return Map.of("reversed",false);
     }
 
     @PostMapping("/openbanking/consent-status") synchronized Object status(@RequestHeader("X-Api-Key")String key,@RequestBody Map<String,Object> b){
@@ -194,7 +293,7 @@ public class OpenBankingSim {
         var list=accounts(text(c,"bankId"),text(c,"userRef")).stream().filter(a->allowed.contains(a.id())).map(a->{
             var m=new LinkedHashMap<String,Object>();
             m.put("id",a.id());m.put("type",a.type());m.put("name",a.name());m.put("masked",a.masked());m.put("brand",a.brand());m.put("currency","AZN");
-            long balance=balance(a,now);m.put("balanceMinor",balance);m.put("availableMinor",balance);
+            long balance=availableBalance(a,c,now);m.put("balanceMinor",balance);m.put("availableMinor",balance);
             return (Map<String,Object>)m;
         }).toList();
         return Map.of("status","AUTHORIZED","accounts",list);
@@ -211,6 +310,9 @@ public class OpenBankingSim {
         List<Map<String,Object>> out=new ArrayList<>();
         for(var a:accounts(text(c,"bankId"),text(c,"userRef")))if(allowed.contains(a.id()))
             for(var t:history(a,now))if(!Instant.parse(t.get("bookedAt").toString()).isBefore(from))out.add(t);
+        @SuppressWarnings("unchecked") var charges=(List<Map<String,Object>>)c.getOrDefault("charges",List.of());
+        for(var x:charges)if(!Boolean.TRUE.equals(x.get("reversed"))&&allowed.contains(text(x,"accountId"))&&!Instant.parse(text(x,"at")).isBefore(from))
+            out.add(new LinkedHashMap<>(Map.of("id",text(x,"id"),"accountId",text(x,"accountId"),"bookedAt",text(x,"at"),"amountMinor",x.get("amountMinor"),"direction","OUT","name","Kampus: "+text(x,"reference"),"mcc","0001","status","BOOKED")));
         return Map.of("status","AUTHORIZED","transactions",out);
     }
 
@@ -219,70 +321,5 @@ public class OpenBankingSim {
         var c=consent(text(b,"consentId"));
         c.put("status","REVOKED");c.put("accountIds",List.of());persist();
         return Map.of("status","REVOKED");
-    }
-
-    // ---- hosted bank page ---------------------------------------------------
-
-    static String esc(String v){return v.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace("\"","&quot;");}
-    static ResponseEntity<String> html(HttpStatus status,String bankName,String color,String inner){
-        String page="<!doctype html><html lang=\"az\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>"+esc(bankName)+" · İcazə</title><style>"
-            +"*{box-sizing:border-box}body{margin:0;background:#f4f5f2;color:#17201c;font:15px system-ui,sans-serif}"
-            +".bar{background:"+color+";color:#fff;padding:22px 24px}.bar b{font-size:20px;letter-spacing:-.3px}.bar span{display:block;font-size:11px;opacity:.85;margin-top:4px;letter-spacing:1px}"
-            +"main{max-width:480px;margin:0 auto;padding:24px}h1{font-size:26px;letter-spacing:-.8px;margin:6px 0 10px}p{line-height:1.6;color:#59635d;margin:8px 0}"
-            +".box{background:#fff;border:1px solid #e1e5df;border-radius:16px;padding:6px 16px;margin:16px 0}.row{display:flex;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid #eef0ec}.row:last-child{border:0}"
-            +".row label{flex:1;display:flex;gap:12px;align-items:center;cursor:pointer}.row input{width:20px;height:20px;accent-color:"+color+"}.muted{color:#7a847e;font-size:12px}"
-            +"ul{padding-left:18px;margin:8px 0}li{margin:6px 0;line-height:1.5}.actions{display:flex;gap:10px;margin-top:18px}"
-            +"button{flex:1;border:0;border-radius:14px;padding:16px;font:600 15px system-ui;cursor:pointer}.ok{background:"+color+";color:#fff}.no{background:#e9ece7;color:#17201c}</style>"
-            +"<div class=\"bar\"><b>"+esc(bankName)+"</b><span>MOCK AÇIQ BANKÇILIQ · SANDBOX</span></div><main>"+inner+"</main></html>";
-        return ResponseEntity.status(status).contentType(MediaType.TEXT_HTML).header("Cache-Control","no-store").body(page);
-    }
-
-    @GetMapping(value="/ob-consent/{id}",produces=MediaType.TEXT_HTML_VALUE)
-    synchronized ResponseEntity<String> page(@PathVariable String id){
-        var c=consent(id);
-        var bank=bank(text(c,"bankId"));
-        String name=bank.get("name").toString(),color=bank.get("color").toString();
-        String status=text(c,"status");
-        if(!"AWAITING_AUTHORIZATION".equals(status)){
-            String message=switch(status){
-                case "AUTHORIZED"->"<h1>İcazə verildi ✓</h1><p>Kampus tətbiqinə qayıdın. Hesablarınız bir neçə saniyəyə görünəcək.</p>";
-                case "REJECTED"->"<h1>İcazə rədd edildi</h1><p>Kampus heç bir məlumat almadı. Tətbiqə qayıda bilərsiniz.</p>";
-                case "REVOKED"->"<h1>İcazə ləğv edilib</h1><p>Bu icazə artıq etibarlı deyil.</p>";
-                default->"<h1>Vaxt bitdi</h1><p>Bu səhifənin vaxtı bitib. Kampus tətbiqindən yenidən başlayın.</p>";
-            };
-            return html(HttpStatus.OK,name,color,message);
-        }
-        var rows=new StringBuilder();
-        for(var a:accounts(text(c,"bankId"),text(c,"userRef")))
-            rows.append("<div class=\"row\"><label><input type=\"checkbox\" name=\"account\" form=\"consent\" value=\"").append(esc(a.id())).append("\" checked><span><b>")
-                .append(esc(a.name())).append("</b><br><span class=\"muted\">").append(esc(a.masked())).append("</span></span></label></div>");
-        String inner="<p class=\"muted\">KAMPUS TƏTBİQİ İCAZƏ İSTƏYİR</p><h1>Hesablarına baxış icazəsi</h1>"
-            +"<p>Kampus aşağıdakı hesab və kartlarının balansını və əməliyyatlarını göstərmək üçün icazə istəyir. İstədiklərini seçə bilərsən.</p>"
-            +"<div class=\"box\">"+rows+"</div>"
-            +"<div class=\"box\"><ul><li>Hesab və kart balansı</li><li>Son "+HISTORY_DAYS+" günün əməliyyat tarixçəsi</li><li><b>Yalnız oxuma:</b> Kampus bu hesablardan pul köçürə bilməz</li><li>İcazə "+consentDays+" gün etibarlıdır və istənilən vaxt ləğv edilə bilər</li></ul></div>"
-            +"<form id=\"consent\" method=\"post\" action=\"/ob-consent/"+esc(id)+"\"><input type=\"hidden\" name=\"nonce\" value=\""+esc(text(c,"nonce"))+"\">"
-            +"<div class=\"actions\"><button class=\"no\" name=\"decision\" value=\"reject\">Rədd et</button><button class=\"ok\" name=\"decision\" value=\"approve\">İcazə ver</button></div></form>"
-            +"<p class=\"muted\">Sandbox: real bank girişi və məlumatları yoxdur.</p>";
-        return html(HttpStatus.OK,name,color,inner);
-    }
-
-    @PostMapping(value="/ob-consent/{id}",consumes=MediaType.APPLICATION_FORM_URLENCODED_VALUE,produces=MediaType.TEXT_HTML_VALUE)
-    synchronized ResponseEntity<String> decide(@PathVariable String id,@RequestParam MultiValueMap<String,String> form){
-        var c=consent(id);
-        if(!Objects.equals(form.getFirst("nonce"),c.get("nonce")))throw new ResponseStatusException(HttpStatus.FORBIDDEN);
-        var bank=bank(text(c,"bankId"));
-        String name=bank.get("name").toString(),color=bank.get("color").toString();
-        if(!"AWAITING_AUTHORIZATION".equals(c.get("status")))return page(id);
-        if("reject".equals(form.getFirst("decision"))){
-            c.put("status","REJECTED");persist();
-            return html(HttpStatus.OK,name,color,"<h1>İcazə rədd edildi</h1><p>Kampus heç bir məlumat almadı. Tətbiqə qayıda bilərsiniz.</p>");
-        }
-        var valid=accounts(text(c,"bankId"),text(c,"userRef")).stream().map(Account::id).toList();
-        var chosen=(form.get("account")==null?List.<String>of():form.get("account")).stream().filter(valid::contains).distinct().toList();
-        if(chosen.isEmpty())return html(HttpStatus.UNPROCESSABLE_ENTITY,name,color,"<h1>Hesab seçilməyib</h1><p>Ən azı bir hesab və ya kart seçin.</p><p><a href=\"/ob-consent/"+esc(id)+"\">Geri qayıt</a></p>");
-        long now=System.currentTimeMillis();
-        c.put("status","AUTHORIZED");c.put("accountIds",new ArrayList<>(chosen));c.put("authorizedAt",now);c.put("expiresAt",now+consentDays*86_400_000L);
-        persist();
-        return html(HttpStatus.OK,name,color,"<h1>İcazə verildi ✓</h1><p>Kampus tətbiqinə qayıdın. Hesablarınız bir neçə saniyəyə görünəcək.</p><p class=\"muted\">İcazə "+consentDays+" gün etibarlıdır.</p>");
     }
 }

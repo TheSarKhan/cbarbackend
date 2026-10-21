@@ -85,3 +85,10 @@ Fiziki Android cihazında quraşdırma, kamera, biometrika və iki telefonlu ax�
 - Yoxlama: `TokensTests` (5 unit test) və HTTP `test_31`, `test_32`, mövcud QR testləri token ilə yenilənib. `./scripts/check.sh` keçir (34 HTTP testi).
 - Mobil: QR təsdiqi `paymentToken` göndərir; vaxtı bitmiş və ya xərclənmiş token olduqda tətbiq skanerə qayıdır və ayrıca xəta ikonu göstərir.
 - Yoxlanmayıb: fiziki telefonda QR skan; token müddətinin bitməsi ssenarisi (180 saniyə) HTTP testində deyil, yalnız unit testdədir.
+
+## Açıq bankçılıq müştəri axını və kartdan ödəniş — 22 oktyabr
+
+- Axın: sorğu → bankın müştəri axtarışı (telefon + FİN) və bildirişi → kart seçimi → müddət və aylıq limit → PDF sənəd önizləmə → SİMA imzası (server tərəfindən verilən 3 hərəkətlə kamera yoxlaması, selfi şifrəli saxlanır) → imzalı PDF → bankın «Açıq bankçılıq» bölməsi → Kampus-da kartlar. Sənəd Azərbaycan hərfləri ilə `ConsentDocument` tərəfindən PDF və ekran önizləməsi üçün eyni məzmundan yaradılır; imza məzmun heşinə bağlıdır.
+- Kartdan ödəniş: `topups` (`source=BANK_CARD`), `payments/qr` (`fundingSource=BANK_CARD`) və `transfers` (`fundingAccountId`). Hamısı PIN tələb edir. Bank seçilmiş kart, aylıq limit və qalığı yoxlayır (`CARD_LIMIT`, `CARD_INSUFFICIENT_FUNDS`); rədd edilsə heç nə dəyişmir. Bank tərəfdəki yazılar müştərinin öz hərəkətləri kimi (`Daxili köçürmə`) görünür və xərc sayılmır. Ledger üzləşdirməsi sıfır fərqlə qalır.
+- Yoxlama: HTTP `test_29` (bütün axın, yoxlamalar, ləğv), `test_29b` (bank müştərini tanımır), `test_33` (üç ödəniş növü, limit, başqasının kartı, ləğvdən sonra); `ConsentDocumentTests`. `./scripts/check.sh` keçir (36 HTTP testi). Brauzerdə Chrome ilə bütün axın (saxta kamera və MediaPipe əvəzləyicisi ilə) və üç ödəniş növü yoxlanıldı, PDF yüklənib açıldı.
+- Yoxlanmayıb: fiziki telefonda bank axını, PDF-in telefonda paylaşım pəncərəsi ilə saxlanması, real kamera ilə imza.

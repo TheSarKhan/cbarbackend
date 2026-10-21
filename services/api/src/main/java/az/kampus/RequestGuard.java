@@ -16,7 +16,9 @@ public class RequestGuard extends OncePerRequestFilter {
  @Override protected void doFilterInternal(HttpServletRequest req,HttpServletResponse res,FilterChain chain)throws ServletException,IOException{
   res.setHeader("X-Content-Type-Options","nosniff");
   res.setHeader("Cache-Control","no-store");
-  long limit=Set.of("/api/v1/auth/register","/api/v1/auth/sca/kyc").contains(req.getRequestURI())?524288:131072;
+  String uri=req.getRequestURI();
+  boolean selfie=Set.of("/api/v1/auth/register","/api/v1/auth/sca/kyc").contains(uri)||uri.matches("/api/v1/open-banking/consents/[0-9a-f-]{36}/sign");
+  long limit=selfie?524288:131072;
   if(req.getContentLengthLong()>limit){reject(res,413,"REQUEST_TOO_LARGE");return;}
   if(req.getRequestURI().startsWith("/api/v1/auth/")&&!req.getRequestURI().equals("/api/v1/auth/sca")&&!req.getRequestURI().equals("/api/v1/auth/sca/kyc")){
    long minute=System.currentTimeMillis()/60000;

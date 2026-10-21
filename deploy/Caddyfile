@@ -6,8 +6,8 @@
   X-Frame-Options DENY
   Permissions-Policy "camera=(self), microphone=(), geolocation=()"
  }
- @selfie path /api/v1/auth/register /api/v1/auth/sca/kyc
- @noSelfie not path /api/v1/auth/register /api/v1/auth/sca/kyc
+ @selfie path /api/v1/auth/register /api/v1/auth/sca/kyc /api/v1/open-banking/consents/*/sign
+ @noSelfie not path /api/v1/auth/register /api/v1/auth/sca/kyc /api/v1/open-banking/consents/*/sign
  request_body @noSelfie {
   max_size 128KB
  }

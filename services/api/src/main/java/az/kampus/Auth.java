@@ -116,13 +116,17 @@ import static az.kampus.Store.*;
   return kyc?m("proof",proof.get("id"),"kycRequired",true,"kycActions",proof.get("kycActions")):m("proof",proof.get("id"),"kycRequired",false);
  }
  /** Second factor for large amounts: a fresh liveness check. The selfie is kept encrypted as evidence for this payment. */
+ /** The camera check shared by payment step-up and document signing: MediaPipe in the app, the actions the server asked for, one face, a real JPEG. */
+ byte[] verifyLiveness(Map<String,Object> b,Object expectedActions){
+  Problem.require("MEDIAPIPE_WEB".equals(str(b,"livenessMode")),"LIVENESS_REQUIRED","Kamera ilə canlılıq yoxlamasını tamamlayın.");
+  Problem.require(expectedActions.equals(b.get("livenessActions")),"LIVENESS_REQUIRED","Canlılıq hərəkətlərini kamerada tamamlayın.");
+  Problem.require(b.containsKey("facesCount")&&num(b,"facesCount")==1,"MULTIPLE_FACES","Kadrda yalnız 1 üz olmalıdır.");
+  return KycMedia.parseSelfie(str(b,"selfie"));
+ }
  @Transactional Map<String,Object> kycConfirm(User u,Map<String,Object> b){s.lock();
   var p=s.own("SCA",str(b,"proof"),u.id);
   Problem.require(yes(p,"kycRequired")&&!yes(p,"kycDone")&&!yes(p,"used")&&num(p,"expiresAt")>System.currentTimeMillis()&&str(p,"deviceId").equals(u.device),"KYC_NOT_PENDING","Üz təsdiqi tələb olunmur və ya vaxtı bitib.");
-  Problem.require("MEDIAPIPE_WEB".equals(str(b,"livenessMode")),"LIVENESS_REQUIRED","Kamera ilə canlılıq yoxlamasını tamamlayın.");
-  Problem.require(p.get("kycActions").equals(b.get("livenessActions")),"LIVENESS_REQUIRED","Canlılıq hərəkətlərini kamerada tamamlayın.");
-  Problem.require(b.containsKey("facesCount")&&num(b,"facesCount")==1,"MULTIPLE_FACES","Kadrda yalnız 1 üz olmalıdır.");
-  byte[] selfie=KycMedia.parseSelfie(str(b,"selfie"));
+  byte[] selfie=verifyLiveness(b,p.get("kycActions"));
   String mediaId=media.store(u.id,"PAYMENT_SELFIE","image/jpeg",selfie);
   p.put("kycDone",true);p.put("kycMediaId",mediaId);p.put("expiresAt",System.currentTimeMillis()+90_000);s.save("SCA",p);
   s.audit(u.id,"KYC_STEP_UP_CONFIRMED",m("proof",p.get("id"),"mediaId",mediaId,"selfieSha256",KycMedia.sha256(selfie),"payload",p.get("payload")));
