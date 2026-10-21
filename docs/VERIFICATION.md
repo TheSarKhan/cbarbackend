@@ -77,3 +77,11 @@ Fiziki Android cihazında quraşdırma, kamera, biometrika və iki telefonlu ax�
 - 500 AZN və ondan böyük P2P köçürmədə PIN-dən sonra üzün də təsdiqlənməsi tələb olunur (`kampus.kyc-step-up-minor`, defolt 50000 qəpik). `auth/sca` server tərəfindən 3 təsadüfi hərəkət (`kycActions`) qaytarır, tətbiq kamera yoxlamasını açır, `auth/sca/kyc` canlılıq nəticəsini və selfini qəbul edir (selfi `PAYMENT_SELFIE` kimi şifrəli saxlanılır, audit `KYC_STEP_UP_CONFIRMED`). KYC olmadan `403 KYC_REQUIRED`. Yeni cihaz və ya yüksək risk səbəbilə yoxlamaya düşən böyük köçürmə də PIN və KYC-dən keçir.
 - `KycStepUpTests` və HTTP `test_30` (kiçik köçürmə KYC istəmir, böyük köçürmə istəyir, KYC olmadan rədd, yeni cihaz halı) keçir. Brauzerdə saxta kamera ilə yoxlanıldı: PIN → üz yoxlaması → selfi və audit yazısı bazada. Mobil iOS bundle (SDK 57 nüsxəsi) quruldu.
 - Yoxlanmayıb: fiziki telefonda Expo Go-da kamera. Canlılığı müştəri hesablayır; selfi qeydiyyat şəkli ilə üz tutuşdurulmur, yalnız sübut kimi saxlanır. Serverin öz Caddyfile-ında `/api/v1/auth/sca/kyc` üçün 600KB qaydası `update-server-config.sh` təkrar işə salınanda əlavə olunur.
+
+## Tokenizasiya — 22 oktyabr
+
+- `Tokens` xidməti və `payment_tokens` cədvəli (V4). QR parse tək istifadəlik token verir; ödəniş onu xərcləyir. Token başqa istifadəçiyə, başqa QR-a və ya ikinci ödənişə keçmir (`TOKEN_INVALID`, `TOKEN_MISMATCH`, `TOKEN_USED`, vaxtı bitəndə `TOKEN_EXPIRED`). Rədd edilən ödəniş (məsələn, məbləğ uyğunsuzluğu) tokeni yandırmır.
+- FİN və ŞV seriyası: açarlı HMAC tokeni və maskalanmış forma. Admin paneldə `7••••44` kimi görünür. Seed başlanğıcda köhnə açıq qeydləri köçürür.
+- Yoxlama: `TokensTests` (5 unit test) və HTTP `test_31`, `test_32`, mövcud QR testləri token ilə yenilənib. `./scripts/check.sh` keçir (34 HTTP testi).
+- Mobil: QR təsdiqi `paymentToken` göndərir; vaxtı bitmiş və ya xərclənmiş token olduqda tətbiq skanerə qayıdır və ayrıca xəta ikonu göstərir.
+- Yoxlanmayıb: fiziki telefonda QR skan; token müddətinin bitməsi ssenarisi (180 saniyə) HTTP testində deyil, yalnız unit testdədir.

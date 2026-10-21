@@ -21,6 +21,7 @@ Bu sənəd bütün TT-nin tamamlandığını bildirmir. “İşləyir” lokal s
 - Büdcə/analitika: kateqoriya üzrə aylıq xərclər, büdcə və hədd bildirişləri, kateqoriyanın dəyişdirilməsi.
 - Admin: monitorinq, fraud/mübahisə, kart köçürmələri, demo KYC reyestri, kripto AML qeydləri, audit, kapital, feature flag və CSV.
 - Açıq bankçılıq (yalnız oxuma): dörd mock bank (Kapital Bank, ABB, PAŞA Bank, Rabitəbank). İstifadəçi bank seçir, bankın öz səhifəsində hansı kart və hesabları paylaşacağını seçib icazə verir. Kampus balans və əməliyyatları çəkir, MCC koduna görə kateqoriyalara ayırır, xərcləri mövcud analitika və büdcələrə mənbə etiketi ilə qatır, büdcə xəbərdarlığı göndərir. Öz hesablar arasında köçürmə xərc sayılmır. İcazə ləğv ediləndə həmin bankdan gətirilən bütün məlumat silinir. Xarici məlumat ledger-ə, kredit scoring-ə və fraud qaydalarına daxil olmur.
+- Tokenizasiya: QR ödənişi tək istifadəlik ödəniş tokeni ilə aparılır (`payments/qr/parse` verir, `payments/qr` xərcləyir). Token təsadüfi 256 bitdir, bazada yalnız SHA-256 heşi saxlanılır, istifadəçiyə, QR-a və satıcıya bağlıdır, 180 saniyə keçərlidir və atomik xərclənir. Uğursuz ödəniş tokeni yandırmır (sorğu geri qaytarılır). FİN və ŞV seriyası bazada açıq saxlanılmır: açarlı HMAC tokeni (təkrar qeydiyyatı yoxlamaq üçün) və maskalanmış forma (`7••••34`) saxlanılır, mövcud qeydlər başlanğıcda köçürülür.
 
 ## Tamamlanmış kimi təqdim edilməməli hissələr
 
@@ -45,3 +46,4 @@ Hazırkı hədəf deploy oluna bilən demo paketidir. Növbəti istifadəçi add
 ## Məlumat və təhlükəsizlik
 
 Pul integer qəpiklə, USDT integer mikro vahidlə saxlanır. Deploy profili lokal standart credential-larla başlamağı rədd edir. Demo bank əməliyyatları real pul xidməti kimi istifadə edilmir. Lokal HTTP yalnız sandbox üçündür. Tam TT qəbul meyarları ayrıca yoxlanmalıdır.
+- Tokenizasiya yalnız QR ödənişini və milli identifikatorları əhatə edir. P2P köçürmə alıcısı və açıq bankçılıq hesabları üçün token yoxdur (hesablar artıq yalnız maskalanmış formada saxlanılır). Real kart şəbəkəsi tokenizasiyası (Visa/Mastercard token xidməti, cihaz tokeni) yoxdur; açar `KYC_MEDIA_KEY`-dən törədilir və ayrıca KMS/HSM yoxdur.

@@ -3,7 +3,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 class KycStepUpTests {
- final Auth auth=new Auth(null,null,null,null,50_000);
+ final Auth auth=new Auth(null,null,null,null,null,50_000);
  static Map<String,Object> payload(String key,Object amount){return Map.of("action","transfers","data",Map.of(key,amount,"phone","+994501000002"));}
  @Test void amountsFromTheConfirmationPayloadDecideWhetherAFaceCheckIsNeeded(){
   assertFalse(auth.needsKyc(payload("amountMinor",49_999)));
