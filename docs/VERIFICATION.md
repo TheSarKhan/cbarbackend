@@ -71,3 +71,9 @@ Fiziki Android cihazında quraşdırma, kamera, biometrika və iki telefonlu ax�
 - `OpenBankingTests`: MCC → kateqoriya xəritəsi, gəlirin və daxili köçürmənin xərc sayılmaması.
 - Müvəqqəti PostgreSQL stack-də Chrome ilə: bank seçimi, bankın yeni tabda açılması, gözləmə paneli, təsdiqin avtomatik aşkarlanması və sinxronizasiya, iki bankın tarixçədə birləşməsi və bank filtri, xarici əməliyyat detalı və kateqoriya dəyişmə, büdcə xəbərdarlığı bildirişi, ləğv və məlumatın silinməsi.
 - Yoxlanmayıb: fiziki telefonda bank səhifəsinin açılması (mobil build `Linking.openURL` istifadə edir), icazənin vaxtının bitməsi ssenarisi (məntiq var, test üçün vaxtı irəli aparan mexanizm yoxdur), real bank API-ləri.
+
+## Böyük məbləğdə KYC təsdiqi — 21 oktyabr
+
+- 500 AZN və ondan böyük P2P köçürmədə PIN-dən sonra üzün də təsdiqlənməsi tələb olunur (`kampus.kyc-step-up-minor`, defolt 50000 qəpik). `auth/sca` server tərəfindən 3 təsadüfi hərəkət (`kycActions`) qaytarır, tətbiq kamera yoxlamasını açır, `auth/sca/kyc` canlılıq nəticəsini və selfini qəbul edir (selfi `PAYMENT_SELFIE` kimi şifrəli saxlanılır, audit `KYC_STEP_UP_CONFIRMED`). KYC olmadan `403 KYC_REQUIRED`. Yeni cihaz və ya yüksək risk səbəbilə yoxlamaya düşən böyük köçürmə də PIN və KYC-dən keçir.
+- `KycStepUpTests` və HTTP `test_30` (kiçik köçürmə KYC istəmir, böyük köçürmə istəyir, KYC olmadan rədd, yeni cihaz halı) keçir. Brauzerdə saxta kamera ilə yoxlanıldı: PIN → üz yoxlaması → selfi və audit yazısı bazada. Mobil iOS bundle (SDK 57 nüsxəsi) quruldu.
+- Yoxlanmayıb: fiziki telefonda Expo Go-da kamera. Canlılığı müştəri hesablayır; selfi qeydiyyat şəkli ilə üz tutuşdurulmur, yalnız sübut kimi saxlanır. Serverin öz Caddyfile-ında `/api/v1/auth/sca/kyc` üçün 600KB qaydası `update-server-config.sh` təkrar işə salınanda əlavə olunur.

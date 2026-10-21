@@ -84,7 +84,8 @@ import static az.kampus.Store.*;
    long daily=s.list("TRANSFER",uid).stream().filter(t->str(t,"createdAt").startsWith(LocalDate.now(ZoneOffset.UTC).toString())&&!Set.of("CANCELLED","REJECTED").contains(str(t,"status"))).mapToLong(t->num(t,"amountMinor")).sum();Problem.require(daily+a<=200_000,"DAILY_LIMIT","Gündəlik köçürmə limiti aşılıb.");
    boolean trusted=s.list("TRUSTED_BENEFICIARY",uid).stream().anyMatch(x->str(b,"phone").equals(str(x,"phone")));
    var risk=risk(u,b);if(str(risk,"action").equals("BLOCK"))throw new Problem(403,"BLACKLISTED_RECIPIENT","Bu alana köçürmə bloklanıb.");boolean review=num(risk,"score")>=80;
-   if(!review&&!(trusted&&num(risk,"score")<30))scaIf(u,proof,p,b,a>6000||num(risk,"score")>=30);
+   // Large amounts are confirmed by the customer (PIN and face check) even when the risk score sends them to manual review afterwards.
+    if(a>=auth.kycLimit()||(!review&&!(trusted&&num(risk,"score")<30)))scaIf(u,proof,p,b,a>6000||a>=auth.kycLimit()||num(risk,"score")>=30);
    String hold=l.hold("wallet:"+uid,a);var t=s.add("TRANSFER",uid,m("senderId",uid,"recipientId",to.get("recipientId"),"recipientName",to.get("maskedName"),"channel",to.get("channel"),"phone",b.get("phone"),"amountMinor",a,"note",str(b,"note"),"trustedBeneficiary",trusted,"status",review?"UNDER_REVIEW":"SCHEDULED","holdId",hold,"executeAt",System.currentTimeMillis()+5000,"risk",risk));
    if(review)s.add("FRAUD","SYSTEM",m("userId",uid,"transferId",t.get("id"),"amountMinor",a,"recipientName",to.get("maskedName"),"score",risk.get("score"),"rules",risk.get("rules"),"status","OPEN","expiresAt",System.currentTimeMillis()+1_800_000));
    return t;
