@@ -111,3 +111,9 @@ Fiziki Android cihazında quraşdırma, kamera, biometrika və iki telefonlu ax�
 - Mobil: Analitika ekranı (proqnoz, kartlar, qeyri-adi ödənişlər, kateqoriyalar, 6 ay, təkrarlanan ödənişlər, büdcə, həftənin günləri), ana səhifə kartı, tarixçədə «Qeyri-adi» və «Təkrar» nişanları, Profildə «Xərc təhlili» düyməsi; Chrome-da yoxlanıb.
 - Yoxlanmayıb: real istifadəçi datası; fiziki telefonda ekranlar; admin analitika səhifəsi yalnız tip yoxlamasından keçib, brauzerdə baxılmayıb.
 
+## Python ML müqayisəsi — 22 oktyabr
+
+- `services/analytics`: Isolation Forest (anomaliya), Holt-Winters (proqnoz), qaydaların Python portu, FastAPI servisi, 7 pytest testi, `scripts/benchmark.sh` ilə eyni sintetik data üzərində Java ilə müqayisə.
+- Nəticə (`docs/ML_COMPARISON.md`): qeyri-adi ödənişlərdə Java statistikası daha yaxşıdır (average precision 0,96, Isolation Forest 0,86); hər ikisi işarələyəndə (hibrid) xəbərdarlıqların 98,9%-i doğrudur, yalançı 0,03/nəfər (recall 77,5%). Proqnozda Holt-Winters orta xətanı 8,0%-dən 7,1%-ə endirir, amma fərq statistik olaraq sübut olunmayıb (95% interval sıfırı keçir). Təkrarlanan ödənişlərdə eyni nəticə. Qərar: canlıda Java statistikası qalır, Python servisi canlı stackə qoşulmayıb.
+- Java proqnozuna günün qalan hissəsi əlavə edildi (median xəta 8,0%-dən 6,5%-ə, aralıq əhatəsi 72%-dən 78%-ə).
+

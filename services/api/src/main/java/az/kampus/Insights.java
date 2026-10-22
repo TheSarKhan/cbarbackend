@@ -220,9 +220,12 @@ final class Insights {
   double cap=sorted[(int)Math.min(27,Math.floor(27*0.95))];
   double[] capped=Arrays.stream(daily).map(v->Math.min(v,cap)).toArray();
   double rate=mean(capped),sd=stdev(daily);
-  double projected=mtd+due+rate*remaining;
+  // what is left of today still counts: at midnight a whole day is missing from the month so far
+  double todayLeft=1-now.atZone(LOCAL).toLocalTime().toSecondOfDay()/86400.0;
+  double projected=mtd+due+rate*(remaining+todayLeft);
   // the spread of the remaining days, plus how unsure the pace itself is (28 days of evidence)
-  double band=1.28*sd*Math.sqrt(remaining+remaining*(double)remaining/28.0);
+  double horizon=remaining+todayLeft;
+  double band=1.28*sd*Math.sqrt(horizon+horizon*horizon/28.0);
   double low=Math.max(mtd+due,projected-band),high=projected+band;
   LocalDate lastStart=monthStart.minusMonths(1);
   long lastTotal=spends.stream().filter(s->!s.day().isBefore(lastStart)&&s.day().isBefore(monthStart)).mapToLong(Spend::amount).sum();
