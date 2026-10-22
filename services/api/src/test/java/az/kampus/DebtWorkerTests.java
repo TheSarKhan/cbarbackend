@@ -50,14 +50,6 @@ class DebtWorkerTests {
   l.release(hold);long before=l.available("wallet:u1");debts.processAt(Instant.now());debts.processAt(Instant.now());
   assertEquals(before-1500,l.available("wallet:u1"));assertEquals("REPAID",str(s.get("PARTNER_LOAN",str(loan,"id")),"status"));assertEquals(0,num(l.reconcile(),"differenceMinor"));
  }
- @Test void cardSpendingResetsOncePerCalendarMonth(){
-  var card=s.get("CARD","card-demo");card.put("spentMonth","2020-01");card.put("spentMinor",3400);s.save("CARD",card);
-  var admin=new Auth.User("u5","Admin","+994501000005","ADMIN","demo-device");
-  var first=(Map<?,?>)engine.write(admin,"admin/sim/card-auth",m("cardId","card-demo","merchantName","Cursor","amountMinor",100),"monthly-reset-one",null);
-  assertEquals("APPROVED",first.get("decision"));assertEquals(100,num(s.get("CARD","card-demo"),"spentMinor"));
-  engine.write(admin,"admin/sim/card-auth",m("cardId","card-demo","merchantName","Cursor","amountMinor",100),"monthly-reset-two",null);
-  assertEquals(200,num(s.get("CARD","card-demo"),"spentMinor"));
- }
  @Test void scoringUsesLedgerHistoryInsteadOfFixedIncome(){
   var scoring=policy.scoring("u1");
   // The seed books top-ups 65, 20 and 10 days ago; how many calendar months that spans depends on today's date.

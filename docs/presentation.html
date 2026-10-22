@@ -1,0 +1,1073 @@
+<!DOCTYPE html>
+<html lang="az">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KAMPUS — Tələbə Rəqəmsal Maliyyə Ekosistemi</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    :root {
+      --bg: #0b1713;
+      --card-bg: #122820;
+      --card-inner: #18382c;
+      --card-border: #224d3e;
+      --card-border-light: #2d6350;
+      --lime: #cbef93;
+      --lime-hover: #b5e46f;
+      --lime-glow: rgba(203, 239, 147, 0.18);
+      --text-main: #f0f7f3;
+      --text-muted: #8da699;
+      --text-dim: #5c7569;
+      --danger: #f87171;
+      --warning: #fbbf24;
+    }
+    body {
+      background-color: var(--bg);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      overflow-x: hidden;
+      user-select: none;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 28px;
+      border-bottom: 1px solid var(--card-border);
+      background: rgba(11, 23, 19, 0.95);
+      backdrop-filter: blur(8px);
+      z-index: 50;
+    }
+    .brand-wrap {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand-logo {
+      width: 40px;
+      height: 40px;
+      background: var(--lime);
+      color: #0b1713;
+      font-weight: 900;
+      font-size: 20px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 16px var(--lime-glow);
+    }
+    .brand-name {
+      font-size: 20px;
+      font-weight: 800;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .brand-name span.dot {
+      color: var(--lime);
+    }
+    .brand-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+    .badge-pill {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(203, 239, 147, 0.12);
+      color: var(--lime);
+      border: 1px solid rgba(203, 239, 147, 0.3);
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+    .header-links {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .header-link-btn {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--lime);
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      padding: 6px 14px;
+      border-radius: 8px;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+    .header-link-btn:hover {
+      background: var(--card-inner);
+      border-color: var(--lime);
+    }
+    .header-link-btn.primary {
+      background: var(--lime);
+      color: #0b1713;
+      font-weight: 800;
+      border: none;
+    }
+    .header-link-btn.primary:hover {
+      background: var(--lime-hover);
+    }
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      background: var(--lime);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--lime);
+    }
+    .slide-counter {
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+    }
+    .counter-curr {
+      font-size: 26px;
+      font-weight: 900;
+      color: var(--lime);
+    }
+    .counter-total {
+      font-size: 13px;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+    main {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 20px;
+      max-width: 1200px;
+      width: 100%;
+      margin: 0 auto;
+      position: relative;
+    }
+    .slide {
+      display: none;
+      width: 100%;
+      animation: fadeIn 0.35s ease-out forwards;
+    }
+    .slide.active {
+      display: flex;
+      flex-direction: column;
+    }
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(12px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    .slide-tag {
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--lime);
+      margin-bottom: 8px;
+    }
+    .slide-title {
+      font-size: clamp(28px, 4.5vw, 46px);
+      font-weight: 900;
+      line-height: 1.15;
+      color: #fff;
+      margin-bottom: 24px;
+      letter-spacing: -0.5px;
+    }
+    .slide-title .highlight {
+      color: var(--lime);
+    }
+    .slide-title .danger {
+      color: var(--danger);
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 16px;
+      width: 100%;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+      width: 100%;
+    }
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      width: 100%;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 20px;
+      position: relative;
+      transition: all 0.2s;
+    }
+    .card:hover {
+      border-color: var(--card-border-light);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+    }
+    .card.featured {
+      border-color: rgba(203, 239, 147, 0.4);
+      background: linear-gradient(145deg, #122820 0%, #16362a 100%);
+      box-shadow: 0 0 30px var(--lime-glow);
+    }
+    .card.alert-card {
+      border-color: rgba(248, 113, 113, 0.35);
+      background: #171f1b;
+    }
+    .card-icon {
+      font-size: 26px;
+      margin-bottom: 12px;
+    }
+    .card-title {
+      font-size: 16px;
+      font-weight: 800;
+      color: #fff;
+      margin-bottom: 8px;
+    }
+    .card-desc {
+      font-size: 13px;
+      color: #cbdad2;
+      line-height: 1.55;
+    }
+    .card-inner-box {
+      background: var(--card-inner);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 12px;
+      margin-top: 12px;
+      font-size: 12px;
+    }
+    .center-slide {
+      text-align: center;
+      align-items: center;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    .center-slide .slide-title {
+      max-width: 800px;
+    }
+    .center-slide .lead-text {
+      font-size: clamp(16px, 2vw, 20px);
+      color: #a2beb1;
+      line-height: 1.6;
+      margin-bottom: 32px;
+      max-width: 720px;
+    }
+    .banner-strip {
+      background: var(--card-inner);
+      border: 1px solid var(--card-border-light);
+      border-radius: 14px;
+      padding: 16px 20px;
+      margin-top: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      width: 100%;
+    }
+    .check-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      font-size: 13px;
+      color: #d1ded8;
+    }
+    .check-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      line-height: 1.45;
+    }
+    .check-list li span.tick {
+      color: var(--lime);
+      font-weight: 900;
+    }
+    footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 28px;
+      border-top: 1px solid var(--card-border);
+      background: rgba(11, 23, 19, 0.95);
+      backdrop-filter: blur(8px);
+      z-index: 50;
+    }
+    .nav-btn-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .btn {
+      padding: 9px 18px;
+      font-size: 12px;
+      font-weight: 700;
+      border-radius: 10px;
+      border: 1px solid var(--card-border);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+      background: var(--card-bg);
+      color: #fff;
+    }
+    .btn:hover:not(:disabled) {
+      background: var(--card-inner);
+      border-color: var(--card-border-light);
+    }
+    .btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+    .btn.primary {
+      background: var(--lime);
+      color: #0b1713;
+      font-weight: 900;
+      border: none;
+    }
+    .btn.primary:hover:not(:disabled) {
+      background: var(--lime-hover);
+      box-shadow: 0 0 16px var(--lime-glow);
+    }
+    .progress-bar-wrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .prog-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--card-border);
+      cursor: pointer;
+      transition: all 0.25s;
+    }
+    .prog-dot.active {
+      width: 24px;
+      border-radius: 999px;
+      background: var(--lime);
+    }
+    .notes-drawer {
+      display: none;
+      position: fixed;
+      bottom: 74px;
+      left: 20px;
+      right: 20px;
+      max-width: 900px;
+      margin: 0 auto;
+      background: #08120f;
+      border: 1px solid var(--lime);
+      border-radius: 16px;
+      padding: 16px 20px;
+      box-shadow: 0 16px 48px rgba(0,0,0,0.6);
+      z-index: 99;
+      animation: fadeIn 0.2s ease;
+    }
+    .notes-drawer.open {
+      display: block;
+    }
+    .notes-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 8px;
+      margin-bottom: 10px;
+    }
+    .notes-title {
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--lime);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .notes-close {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .notes-close:hover {
+      color: #fff;
+    }
+    .notes-content {
+      font-size: 13px;
+      color: #d1ded8;
+      line-height: 1.6;
+    }
+    .code-box {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      background: #08120f;
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid var(--card-border);
+      color: #a2beb1;
+      line-height: 1.5;
+    }
+    @media (max-width: 768px) {
+      header { padding: 12px 16px; }
+      footer { padding: 12px 16px; }
+      .header-links { display: none; }
+      .progress-bar-wrap { display: none; }
+      .slide-title { font-size: 26px; }
+      .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header>
+    <div class="brand-wrap">
+      <div class="brand-logo">K</div>
+      <div>
+        <div class="brand-name">
+          kampus<span class="dot">.</span>
+          <span class="badge-pill">Ekosistem</span>
+        </div>
+        <div class="brand-sub">Tələbələr üçün Rəqəmsal Maliyyə Platforması</div>
+      </div>
+    </div>
+
+    <div class="header-links">
+      <a href="https://cbar.sarkhan.az" target="_blank" class="header-link-btn">
+        <span class="pulse-dot"></span>
+        Admin & Kassa: cbar.sarkhan.az
+      </a>
+      <a href="https://cbar.sarkhan.az/download/kampus.apk" target="_blank" class="header-link-btn primary">
+        <span>📱</span> APK Yüklə
+      </a>
+    </div>
+
+    <div class="slide-counter">
+      <span id="currNum" class="counter-curr">01</span>
+      <span class="counter-total">/ 14</span>
+    </div>
+  </header>
+
+  <!-- MAIN SLIDES -->
+  <main>
+
+    <!-- SLIDE 1 -->
+    <section class="slide active center-slide" data-index="1">
+      <div class="badge-pill" style="margin-bottom: 20px;">🚀 CBAR SANDBOX & NEOPAY FINTECH SHOWCASE 2026</div>
+      <h2 class="slide-title">
+        Gələcəyin Tələbə Bankçılığı:<br/>
+        <span class="highlight">Sürətli. Ağıllı. Təhlükəsiz.</span>
+      </h2>
+      <p class="lead-text">
+        Gündəlik kiçik ödənişlər bir toxunuşla, gücləndirilmiş təhlükəsizlik isə yalnız real risk olduqda işə düşür.
+      </p>
+      <div class="grid-4" style="margin-top: 12px;">
+        <div class="card" style="text-align: left;">
+          <div class="card-icon">📱</div>
+          <div class="card-title">Mobil Cüzdan</div>
+          <div class="card-desc">Android Release APK / React Native</div>
+        </div>
+        <div class="card" style="text-align: left;">
+          <div class="card-icon">🖥️</div>
+          <div class="card-title">Kassa & Admin</div>
+          <div class="card-desc">Next.js 15 / Merchant POS Portalı</div>
+        </div>
+        <div class="card" style="text-align: left;">
+          <div class="card-icon">⚙️</div>
+          <div class="card-title">Core Ledger</div>
+          <div class="card-desc">Java 21 / Spring Boot / İkili Yazılış</div>
+        </div>
+        <div class="card" style="text-align: left;">
+          <div class="card-icon">🌐</div>
+          <div class="card-title">Simulyator</div>
+          <div class="card-desc">AniPay, SİMA, VASP, Kart Şəbəkəsi</div>
+        </div>
+      </div>
+      <div style="margin-top: 28px; font-size: 12px; color: var(--text-dim); font-weight: 600;">
+        Təqdimatçı: Sərxan Babayev & Kampus Mühəndislik Komandası
+      </div>
+    </section>
+
+    <!-- SLIDE 2 -->
+    <section class="slide" data-index="2">
+      <div class="slide-tag">02. Problem və Reallıq</div>
+      <h2 class="slide-title">
+        Tələbə Maliyyəsinin <span class="danger">Gizli Tələləri</span>
+      </h2>
+      <div class="grid-2">
+        <div class="card alert-card">
+          <div class="card-title" style="color: var(--danger); display: flex; align-items: center; gap: 8px;">
+            <span>🚨</span> 400 AZN-lik Real İtki Hekayəsi
+          </div>
+          <p class="card-desc">
+            Komandamızın üzvü süni intellekt platformasına (Cursor) kartını bağladıqdan sonra hesab oğurlandı və bir gecədə <strong>400 AZN təqaüdü silindi</strong>. Ənənəvi bank kartlarında satıcıya kilid və ya dərhal anomaliya aşkarlanması yoxdur!
+          </p>
+        </div>
+        <div class="card">
+          <div class="card-title" style="color: var(--lime); display: flex; align-items: center; gap: 8px;">
+            <span>📄</span> Rəsmi Gəlir Yoxluğu (70%+)
+          </div>
+          <p class="card-desc">
+            Tələbələrin rəsmi iş yeri olmadığı üçün ənənəvi banklar onlara kredit xətti və çevik xidmətlər vermir. Bank kartı olmayan tələbə isə rəqəmsal iqtisadiyyatdan kənarda qalır.
+          </p>
+        </div>
+        <div class="card">
+          <div class="card-title" style="color: var(--lime); display: flex; align-items: center; gap: 8px;">
+            <span>🍕</span> Kafe və Yataqxanada Hesab Bölmə
+          </div>
+          <p class="card-desc">
+            Dostlar arasında 4-5 nəfərlik yemək hesabı hələ də nağd pulla və ya yöndəmsiz kartdan-karta köçürmələrlə toplanır; kimin nə qədər verdiyi dərhal qarışır.
+          </p>
+        </div>
+        <div class="card">
+          <div class="card-title" style="color: var(--lime); display: flex; align-items: center; gap: 8px;">
+            <span>🏪</span> Kampus Kafelərinin POS Xərci
+          </div>
+          <p class="card-desc">
+            Universitet ətrafındakı kiçik kafelər və nüsxə mərkəzləri aylıq POS terminal icarəsi və 2%-lik komissiyalara görə nağd ödənişə üstünlük verirlər.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 3 -->
+    <section class="slide" data-index="3">
+      <div class="slide-tag">03. Bizim Həllimiz</div>
+      <h2 class="slide-title">
+        Kampus: <span class="highlight">360° Rəqəmsal Cüzdan</span>
+      </h2>
+      <div class="grid-3">
+        <div class="card featured">
+          <div class="card-icon">🛡️</div>
+          <div class="card-title">Satıcıya Kilidli Kart</div>
+          <p class="card-desc">Yalnız seçdiyiniz satıcıda (məs. yalnız Cursor və ya Netflix) işləyən xüsusi virtual kart. Başqa heç bir sayt pul çıxa bilməz!</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">⚡</div>
+          <div class="card-title">Adaptiv GMA Təhlükəsizliyi</div>
+          <p class="card-desc">60 AZN-dək gündəlik xərclər və dostlara köçürmələr 1 toxunuşla keçir; şübhəli və iri əməliyyatlarda dərhal PIN və SCA tələb olunur.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">👥</div>
+          <div class="card-title">Ağıllı Hesab Bölmə</div>
+          <p class="card-desc">Hesabı dostlar arasında saniyələr içində bərabər və ya fərdi bölüşdürün, kimin ödədiyini real-vaxt rejimində canlı izləyin.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">⏱️</div>
+          <div class="card-title">5 Saniyəlik "Ləğv Et"</div>
+          <p class="card-desc">Səhv P2P köçürmə zamanı panikaya son: 5 saniyə ərzində "Ləğv et" düyməsinə toxunmaqla vəsaiti dərhal geri qaytarın.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">🏧</div>
+          <div class="card-title">Terminal Nağd Kodu</div>
+          <p class="card-desc">Bank kartı olmayan tələbələr üçün 15 dəqiqəlik birdəfəlik kodla istənilən terminaldan birbaşa nağd yükləmə imkanı.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">📚</div>
+          <div class="card-title">50 AZN "Sonra Ödə" (0%)</div>
+          <p class="card-desc">Dərslik və nahar üçün faizsiz 30/60 günlük tələbə dəstəyi — yalnız nizamnamə kapitalından maliyyələşir.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 4 -->
+    <section class="slide" data-index="4">
+      <div class="slide-tag">04. Sistem Arxitekturası</div>
+      <h2 class="slide-title">
+        Ucdan-Uca <span class="highlight">Klaster Quruluşu</span>
+      </h2>
+      <div class="card" style="padding: 24px;">
+        <div class="code-box" style="margin-bottom: 16px;">
+          <span style="color: var(--lime);">[İSTİFADƏÇİ TƏRƏFİ]</span> 📱 React Native Android APK &nbsp;|&nbsp; 🖥️ Next.js 15 Web & Merchant POS
+        </div>
+        <div style="text-align: center; color: var(--text-dim); margin-bottom: 8px;">↓ HTTPS / TLS 1.3 / ModSecurity WAF / Idempotency-Key</div>
+        <div class="code-box" style="margin-bottom: 16px;">
+          <span style="color: var(--lime);">[REVERSE PROXY]</span> 🛡️ Caddy 2 & Nginx Gateway (SSL Termination, Rate Limiting, Strict Security Headers)
+        </div>
+        <div style="text-align: center; color: var(--text-dim); margin-bottom: 8px;">↓ Daxili Docker Şəbəkəsi (Zero-Trust)</div>
+        <div class="grid-2">
+          <div class="code-box">
+            <span style="color: var(--lime);">⚙️ CORE API (Spring Boot 3 / Java 21)</span><br/>
+            • GMA Dynamic Linking<br/>
+            • Fraud Scoring Engine<br/>
+            • BNPL 10% Capital Limiter
+          </div>
+          <div class="code-box">
+            <span style="color: var(--lime);">🗄️ POSTGRESQL 16 (ACID LEDGER)</span><br/>
+            • İkili Yazılış (Double-Entry)<br/>
+            • HOLD / CAPTURE / RELEASE<br/>
+            • Qoruma Hesabı Üzləşdirməsi
+          </div>
+        </div>
+      </div>
+      <div class="banner-strip">
+        <span style="font-size: 13px; color: #cbdad2;">🌐 Tərəfdaş Simulyatoru: AniPay (CBAR), SİMA eKYC, Luhn Kart Şəbəkəsi, VASP (USDT AML)</span>
+        <span class="badge-pill">Ayrıca Port 8081</span>
+      </div>
+    </section>
+
+    <!-- SLIDE 5 -->
+    <section class="slide" data-index="5">
+      <div class="slide-tag">05. Təhlükəsizlik və Onboarding</div>
+      <h2 class="slide-title">
+        eKYC və Adaptiv <span class="highlight">GMA Mexanizmi</span>
+      </h2>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title" style="color: var(--lime); display: flex; align-items: center; gap: 8px;">
+            <span>🪪</span> CBAR Məsafədən Hesab Açma
+          </div>
+          <ul class="check-list" style="margin-top: 14px;">
+            <li><span class="tick">✓</span> FİN və ŞV seriyası ilə dövlət bazasından avtomatik şəxsiyyət yoxlanışı</li>
+            <li><span class="tick">✓</span> Canlılıq yoxlaması (Liveness): 3 təsadüfi hərəkətlə maska əleyhinə analiz</li>
+            <li><span class="tick">✓</span> SİMA İmza ilə hüquqi qüvvəyə malik rəqəmsal müqavilə təsdiqi</li>
+            <li><span class="tick">✓</span> 18 yaşdan aşağı istifadəçilərə dərhal sistem bloku</li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="card-title" style="color: var(--lime); display: flex; align-items: center; gap: 8px;">
+            <span>🛡️</span> Ağıllı SCA (Dinamik Əlaqələndirmə)
+          </div>
+          <ul class="check-list" style="margin-top: 14px;">
+            <li><span class="tick">✓</span> <strong>60 AZN Həddi:</strong> Kiçik ödənişlər və etibarlı dostlar üçün 1 toxunuşla keçid</li>
+            <li><span class="tick">✓</span> <strong>Dynamic Linking:</strong> PIN imzası məbləğ və alıcıya kriptoqrafik bağlanır</li>
+            <li><span class="tick">✓</span> <strong>Cihaz Bağlanması:</strong> Hesab unikal X-Device-Id ilə bağlanır</li>
+            <li><span class="tick">✓</span> <strong>Brute-Force Bloku:</strong> 3 səhv cəhddən sonra 30 dəqiqəlik avto-blok</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 6 -->
+    <section class="slide" data-index="6">
+      <div class="slide-tag">06. Gündəlik Maliyyə</div>
+      <h2 class="slide-title">
+        Sürətli P2P, EMVCo QR və <span class="highlight">Split Bill</span>
+      </h2>
+      <div class="grid-3">
+        <div class="card">
+          <div class="card-icon">📲</div>
+          <div class="card-title">0% Daxili P2P</div>
+          <p class="card-desc">Telefon nömrəsi ilə anında köçürmə. Səhv nömrəyə qarşı alıcının adı maskalanaraq göstərilir (<code>Sərxan B.</code>).</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">⏱️</div>
+          <div class="card-title">5 Saniyəlik Ləğv Buferi</div>
+          <p class="card-desc">Düyməyə basıldıqdan sonra 5 saniyə ərzində "Ləğv et" seçimi ilə pulu dərhal balansa qaytarmaq mümkündür.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">🏁</div>
+          <div class="card-title">EMVCo QR Standartı</div>
+          <p class="card-desc">Mərkəzi Bank tələbinə uyğun TLV formatı və CRC16 yoxlaması. Dinamik (məbləğli) və statik stikerlər.</p>
+        </div>
+      </div>
+      <div class="banner-strip">
+        <div>
+          <div style="font-weight: 800; color: #fff; font-size: 14px;">🍕 Ağıllı Hesab Bölmə (Split Bill) Praktikada:</div>
+          <div style="font-size: 12px; color: var(--lime); margin-top: 4px;">4 nəfərlik 60 AZN hesab → Hər kəsə 15 AZN sorğu → Canlı gedişat izləməsi ("3/4 ödəndi")</div>
+        </div>
+        <span class="badge-pill">İşlək Demo</span>
+      </div>
+    </section>
+
+    <!-- SLIDE 7 -->
+    <section class="slide" data-index="7">
+      <div class="slide-tag">07. Onlayn Qoruma</div>
+      <h2 class="slide-title">
+        Virtual Kartlar: <span class="highlight">3 Səviyyəli Qalxan</span>
+      </h2>
+      <div class="grid-3">
+        <div class="card">
+          <div style="font-size: 11px; font-weight: 800; color: var(--lime); margin-bottom: 6px;">TİP 1</div>
+          <div class="card-title">Standart Virtual Kart</div>
+          <p class="card-desc">İstənilən onlayn mağazada alış-veriş üçün. Aylıq və əməliyyat üzrə limitlər dərhal tətbiq olunur.</p>
+        </div>
+        <div class="card featured">
+          <div style="font-size: 11px; font-weight: 800; color: var(--lime); margin-bottom: 6px;">TİP 2 (ƏSAS İNNOVASİYA)</div>
+          <div class="card-title">Satıcıya Kilidli Kart</div>
+          <p class="card-desc">Yalnız birinci ödənən satıcıya (məsələn Cursor) bağlanır. Xaker kartı oğurlasa belə başqa heç bir sayt 1 qəpik belə çəkə bilməz!</p>
+        </div>
+        <div class="card">
+          <div style="font-size: 11px; font-weight: 800; color: var(--lime); margin-bottom: 6px;">TİP 3</div>
+          <div class="card-title">Birdəfəlik Kart (Burner)</div>
+          <p class="card-desc">İlk uğurlu ödənişdən sonra dərhal özünü məhv edir. Şübhəli və yeni saytlar üçün ideal vasitədir.</p>
+        </div>
+      </div>
+      <div class="banner-strip">
+        <span style="font-size: 12px; color: #cbdad2;">🚨 Anomaliya Aşkarlanması: 20 USD yerinə 200 USD tələb olunduqda avtomatik bloklanır!</span>
+        <span class="badge-pill">"Bu Mən Deyiləm" düyməsi</span>
+      </div>
+    </section>
+
+    <!-- SLIDE 8 -->
+    <section class="slide" data-index="8">
+      <div class="slide-tag">08. Tələbə Kreditləri</div>
+      <h2 class="slide-title">
+        Sonra Ödə (BNPL) və <span class="highlight">Kredit Vitrini</span>
+      </h2>
+      <div class="grid-2">
+        <div class="card">
+          <div class="badge-pill" style="margin-bottom: 12px;">0% KOMİSSİYA · 50 AZN-DƏK</div>
+          <div class="card-title">Kampus "Sonra Ödə"</div>
+          <p class="card-desc" style="margin-bottom: 14px;">Kitab, dərs ləvazimatı və nahar üçün 30 və ya 60 günlük faizsiz dəstək.</p>
+          <div class="card-inner-box">
+            <div>🔒 <strong>Mənbə:</strong> Yalnız şirkətin öz nizamnamə kapitalından maliyyələşir.</div>
+            <div style="margin-top: 4px;">⚖️ <strong>CBAR Qayda 9:</strong> Ümumi portfel kapitalın 10%-ni aşa bilməz.</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="badge-pill" style="margin-bottom: 12px; background: rgba(245, 158, 11, 0.15); color: #fbbf24; border-color: rgba(245, 158, 11, 0.3);">BÖYÜK XƏRCLƏR ÜÇÜN</div>
+          <div class="card-title">Partnyor Kredit Vitrini</div>
+          <p class="card-desc" style="margin-bottom: 14px;">Noutbuk və ya təhsil haqqı üçün tərəfdaş bank və BOKT təkliflərinin şəffaf müqayisəsi.</p>
+          <div class="card-inner-box">
+            <div>📊 <strong>Şəffaflıq:</strong> FİFD (APR), aylıq ödəniş və şərtlər yan-yana.</div>
+            <div style="margin-top: 4px;">🤝 <strong>Model:</strong> Tələbədən faiz tutulmur, partnyordan Lead Fee alınır.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 9 -->
+    <section class="slide" data-index="9">
+      <div class="slide-tag">09. Rəqəmsal Aktivlər</div>
+      <h2 class="slide-title">
+        USDT Kripto Pilotu: <span class="highlight">Volatillik Sıfır</span>
+      </h2>
+      <div class="card" style="margin-bottom: 16px;">
+        <div class="grid-4" style="text-align: center;">
+          <div class="card-inner-box">
+            <div style="color: var(--text-muted); font-size: 11px;">Tələbə Ödəyir</div>
+            <div style="font-weight: 800; color: #fff; margin-top: 4px;">🪙 USDT Cüzdanı</div>
+          </div>
+          <div class="card-inner-box">
+            <div style="color: var(--text-muted); font-size: 11px;">Məzənnə Kilidi</div>
+            <div style="font-weight: 800; color: var(--lime); margin-top: 4px;">⏱️ 30 Saniyəlik Zəmanət</div>
+          </div>
+          <div class="card-inner-box">
+            <div style="color: var(--text-muted); font-size: 11px;">VASP Simulator</div>
+            <div style="font-weight: 800; color: #fff; margin-top: 4px;">🛡️ AML & Travel Rule</div>
+          </div>
+          <div class="card-inner-box">
+            <div style="color: var(--text-muted); font-size: 11px;">Satıcı Qəbul Edir</div>
+            <div style="font-weight: 800; color: var(--lime); margin-top: 4px;">💰 100% AZN Nağd</div>
+          </div>
+        </div>
+      </div>
+      <div class="banner-strip">
+        <span style="font-size: 12px; color: #cbdad2;">⚙️ Tənzimləyici Rejimi: Defolt olaraq sönülüdür (Feature Flag). CBAR icazəsi ilə 1 kliklə aktivləşir.</span>
+        <span class="badge-pill">Sandbox Ready</span>
+      </div>
+    </section>
+
+    <!-- SLIDE 10 -->
+    <section class="slide" data-index="10">
+      <div class="slide-tag">10. Mühasibat Dəqiqliyi</div>
+      <h2 class="slide-title">
+        İkili Yazılışlı <span class="highlight">Ledger & Qoruma Hesabı</span>
+      </h2>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title" style="color: var(--lime);">⚖️ Balans Yoxdur — Ledger Var!</div>
+          <div class="code-box" style="margin: 12px 0;">
+            Debet: Aytən Məmmədova (-10.00 AZN)<br/>
+            Kredit: Kafe Xəzər (+9.90 AZN)<br/>
+            Kredit: Kampus Komissiya (+0.10 AZN)<br/>
+            ------------------------------------<br/>
+            <span style="color: var(--lime);">Σ(Debet) - Σ(Kredit) = 0.00 AZN</span>
+          </div>
+          <p class="card-desc">Vəsait yoxdan yaranmır və itmir. Hər qəpik ikili yazılışla qorunur.</p>
+        </div>
+        <div class="card">
+          <div class="card-title" style="color: var(--lime);">🏦 Qoruma Hesabı (Safeguarding)</div>
+          <div class="card-inner-box" style="margin: 12px 0; line-height: 1.6;">
+            • Müştəri pulları şirkət hesabından tam ayrılıb (segregated).<br/>
+            • Hər gecə daxili ledger ilə tərəfdaş bank çıxarışı üzləşdirilir.<br/>
+            • İdempotent sorğular sayəsində təkrar pul çıxılması 100% mümkünsüzdür.
+          </div>
+          <p class="card-desc">CBAR ödəniş təşkilatları tələblərinə 100% uyğundur.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 11 -->
+    <section class="slide" data-index="11">
+      <div class="slide-tag">11. İdarəetmə Paneli</div>
+      <h2 class="slide-title">
+        Kassa və <span class="highlight">Admin / Compliance Portalı</span>
+      </h2>
+      <div class="grid-3">
+        <div class="card">
+          <div style="font-size: 11px; font-weight: 800; color: var(--lime); margin-bottom: 6px;">ROL 1</div>
+          <div class="card-title">MERCHANT (Satıcı Kassası)</div>
+          <p class="card-desc">Bahalı POS aparatına ehtiyac yoxdur. Brauzerdə məbləği yazır, dinamik QR çıxır, tələbə ödəyən kimi yaşıl təsdiq görünür.</p>
+        </div>
+        <div class="card">
+          <div style="font-size: 11px; font-weight: 800; color: var(--lime); margin-bottom: 6px;">ROL 2</div>
+          <div class="card-title">COMPLIANCE & AML</div>
+          <p class="card-desc">Şübhəli əməliyyatların araşdırılması, KYC reyestri, 10% BNPL limitinin monitorinqi və CBAR prudensial hesabatları.</p>
+        </div>
+        <div class="card">
+          <div style="font-size: 11px; font-weight: 800; color: var(--lime); margin-bottom: 6px;">ROL 3</div>
+          <div class="card-title">ADMIN (Sistem Rəhbəri)</div>
+          <p class="card-desc">Canlı dövriyyə statistikası, istifadəçi bazası, audit loqları və Feature Flag-lar (kripto aktivləşdirmə).</p>
+        </div>
+      </div>
+      <div style="margin-top: 20px; text-align: center;">
+        <a href="https://cbar.sarkhan.az" target="_blank" class="header-link-btn" style="display: inline-flex;">
+          Canlı Portala Keçid: https://cbar.sarkhan.az →
+        </a>
+      </div>
+    </section>
+
+    <!-- SLIDE 12 -->
+    <section class="slide" data-index="12">
+      <div class="slide-tag">12. Mühəndislik və DevOps</div>
+      <h2 class="slide-title">
+        Sənaye Standartlı <span class="highlight">Texnoloji Stek</span>
+      </h2>
+      <div class="grid-4" style="margin-bottom: 16px;">
+        <div class="card">
+          <div class="card-title" style="font-size: 14px;">Frontend</div>
+          <div class="card-desc" style="font-size: 12px;">Next.js 15, React 19, Tailwind</div>
+        </div>
+        <div class="card">
+          <div class="card-title" style="font-size: 14px;">Mobile</div>
+          <div class="card-desc" style="font-size: 12px;">React Native, Expo 52, Android Native</div>
+        </div>
+        <div class="card">
+          <div class="card-title" style="font-size: 14px;">Backend Core</div>
+          <div class="card-desc" style="font-size: 12px;">Java 21 LTS, Spring Boot 3, Flyway</div>
+        </div>
+        <div class="card">
+          <div class="card-title" style="font-size: 14px;">Database</div>
+          <div class="card-desc" style="font-size: 12px;">PostgreSQL 16 ACID, Row Lock</div>
+        </div>
+      </div>
+      <div class="banner-strip">
+        <div>
+          <div style="font-weight: 800; color: #fff; font-size: 14px;">🤖 3 Repozitoriyalı Tam Avtomatlaşdırılmış CI/CD Klasteri:</div>
+          <div style="font-size: 12px; color: #cbdad2; margin-top: 4px;">GitHub Actions hər push-da testləri işlədir, VPS-də Docker konteynerlərini yeniləyir və Release APK-nı dərhal Telegram Botuna (@cbarcicdbot) göndərir.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 13 -->
+    <section class="slide" data-index="13">
+      <div class="slide-tag">13. Monetizasiya</div>
+      <h2 class="slide-title">
+        Dayanıqlı <span class="highlight">Biznes Modeli</span>
+      </h2>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-icon">🏪</div>
+          <div class="card-title">Satıcı QR Komissiyası (0.8% - 1.2%)</div>
+          <p class="card-desc">Ənənəvi bankların 2%-lik POS haqlarından 50% daha ucuz olduğu üçün kampus kafeləri üçün yüksək qənaət təmin edir.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">🤝</div>
+          <div class="card-title">Kredit Vitrini (Lead Fee: 1.5% - 2.5%)</div>
+          <p class="card-desc">Bank və BOKT-lara göndərilən hər rəsmiləşmiş tələbə krediti üçün tərəfdaş maliyyə qurumundan komissiya.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">💳</div>
+          <div class="card-title">Virtual Kart Interchange Payı</div>
+          <p class="card-desc">Tələbələrin qlobal internet platformalarında etdiyi ödənişlərdən kart şəbəkələrindən əldə olunan gəlir.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">🎓</div>
+          <div class="card-title">Universitet Tərəfdaşlıqları</div>
+          <p class="card-desc">Yataqxana ödənişləri, tələbə tədbirləri və kampus daxili vahid smart-kart infrastrukturu xidmətləri.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 14 -->
+    <section class="slide center-slide" data-index="14">
+      <div class="badge-pill" style="margin-bottom: 16px;">14. NÖVBƏTİ ADDIMLAR</div>
+      <h2 class="slide-title">
+        Gələcəyin Neobankı<br/>
+        <span class="highlight">Kampusdan Başlayır!</span>
+      </h2>
+      <div class="grid-3" style="margin-bottom: 24px; text-align: left;">
+        <div class="card">
+          <div style="font-size: 11px; font-weight: 800; color: var(--lime); margin-bottom: 4px;">FAZA 1 (İNDİ)</div>
+          <div class="card-title" style="font-size: 14px;">Canlı Sandbox</div>
+          <p class="card-desc" style="font-size: 12px;">Tam ekosistem, VPS deploy, Android APK və simulyator.</p>
+        </div>
+        <div class="card">
+          <div style="font-size: 11px; font-weight: 800; color: var(--lime); margin-bottom: 4px;">FAZA 2 (Q1 2027)</div>
+          <div class="card-title" style="font-size: 14px;">Real API İnteqrasiyası</div>
+          <p class="card-desc" style="font-size: 12px;">SİMA rəsmi imza və Mərkəzi Bankın Açıq Bankçılıq qovşağı.</p>
+        </div>
+        <div class="card">
+          <div style="font-size: 11px; font-weight: 800; color: var(--lime); margin-bottom: 4px;">FAZA 3 (Q2 2027)</div>
+          <div class="card-title" style="font-size: 14px;">Universitet Piloti</div>
+          <p class="card-desc" style="font-size: 12px;">Xəzər Universiteti üzrə 5,000 tələbə və 40 kampus obyekti.</p>
+        </div>
+      </div>
+      <div style="margin-top: 10px;">
+        <p style="font-size: 18px; font-weight: 800; color: #fff; margin-bottom: 16px;">Diqqətiniz üçün təşəkkür edirik!</p>
+        <div style="display: flex; align-items: center; justify-content: center; gap: 12px;">
+          <a href="https://cbar.sarkhan.az" target="_blank" class="btn primary" style="padding: 12px 24px; font-size: 13px;">
+            Canlı Portala Bax (cbar.sarkhan.az)
+          </a>
+          <a href="https://cbar.sarkhan.az/download/kampus.apk" target="_blank" class="btn" style="padding: 12px 24px; font-size: 13px;">
+            APK Yüklə
+          </a>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- FOOTER -->
+  <footer>
+    <div class="nav-btn-group">
+      <button id="prevBtn" class="btn">← Əvvəlki</button>
+      <button id="nextBtn" class="btn primary">Növbəti →</button>
+    </div>
+
+    <div id="progDots" class="progress-bar-wrap"></div>
+
+    <div class="nav-btn-group">
+      <button id="notesBtn" class="btn">🗣️ Spiker Qeydləri</button>
+      <button id="fsBtn" class="btn">⛶ Tam Ekran</button>
+    </div>
+  </footer>
+
+  <!-- SPEAKER NOTES DRAWER -->
+  <div id="notesDrawer" class="notes-drawer">
+    <div class="notes-header">
+      <span class="notes-title">🗣️ Spiker Pitch Qeydləri</span>
+      <button id="closeNotes" class="notes-close">✕ Bağla</button>
+    </div>
+    <div id="notesText" class="notes-content"></div>
+  </div>
+
+  <script>
+    const slides = Array.from(document.querySelectorAll('.slide'));
+    const total = slides.length;
+    let current = 0;
+
+    const notes = [
+      "Hörmətli münsiflər və qonaqlar. Bu gün sizə sadəcə bir mobil tətbiq deyil, Azərbaycanın universitet gəncliyi üçün hazırlanmış ilk tamhüquqlu rəqəmsal maliyyə ekosistemini — KAMPUS-u təqdim edirik.",
+      "Tələbə maliyyəsində ən böyük ağrılar: rəsmi gəlir arayışının olmaması, onlayn platformalarda abunəlik fırıldaqları və komandamızın üzvünün başına gələn 400 AZN-lik itki təcrübəsi.",
+      "Kampus tələbələrə gündəlik kiçik ödənişləri 1 toxunuşla keçirməyə, dostlar arasında hesabı saniyələrlə bölməyə və ən əsası satıcıya kilidli kartlarla qorunmağa imkan verir.",
+      "Sistem sadəcə bir app deyil: React Native mobil tətbiq, Next.js kassa portali, Spring Boot 3 core mühərriki və CBAR tələblərinə cavab verən ikili yazılışlı PostgreSQL ledger-idir.",
+      "Mərkəzi Bankın məsafədən hesab açma qaydasına tam uyğun olaraq eKYC, liveness və SİMA elektron imza modulu simulyasiya edilib; 60 AZN altı əməliyyatlar friction-free keçir.",
+      "Gündəlik tələbə həyatında ən çox edilən P2P əməliyyatlarında səhvə qarşı 5 saniyəlik ləğv etmə imkanı və EMVCo standartlı QR kodları təqdim edirik.",
+      "Pitch-imizin əsas qalxanı: Satıcıya Kilidli Virtual Kartlar! Əgər bu sistem vaxtında olsaydı, komanda üzvümüz Cursor abunəliyi səbəbilə 400 AZN itirməzdi.",
+      "Sonra Ödə xidməti 18+ tələbələr üçün 50 AZN-dək faizsiz verilir və Mərkəzi Bankın 9-cu qaydasına uyğun olaraq yalnız şirkətin nizamnamə kapitalından maliyyələşir.",
+      "Kripto pilotumuzda tələbə USDT ilə ödəyir, lakin kafe və satıcı dərhal AZN alır! Beləliklə satıcı heç bir bazar volatilliyi riski daşımır.",
+      "Bankçılığın ürəyi: ikili yazılışlı ledger. Heç vaxt balans birbaşa artırılmır; hər qəpik audit olunur və müştəri vəsaitləri qoruma hesabında saxlanılır.",
+      "Kassir üçün heç bir bahalı aparat tələb olunmur — adi telefon və ya brauzer ekranı ilə dinamik QR yaradaraq ödənişləri 1 saniyədə təsdiqləyir.",
+      "Mühəndislik komandamız sənaye standartlarında Java 21, React Native və PostgreSQL stekindən istifadə edib; 3 repo üzrə avtomatik CI/CD və Telegram botu qoşulub.",
+      "Biznes modelimiz şəffafdır: kiçik satıcı ekvayrinq komissiyası, partnyor banklardan kredit yönləndirmə haqları və virtual kart interchange payı.",
+      "Məqsədimiz Khazar Universiteti pilotu ilə başlayaraq bütün ölkə tələbələrinə etibarlı, müasir və rəqəmsal maliyyə azadlığı bəxş etməkdir!"
+    ];
+
+    const currNum = document.getElementById('currNum');
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const progDots = document.getElementById('progDots');
+    const notesDrawer = document.getElementById('notesDrawer');
+    const notesText = document.getElementById('notesText');
+    const notesBtn = document.getElementById('notesBtn');
+    const closeNotes = document.getElementById('closeNotes');
+    const fsBtn = document.getElementById('fsBtn');
+
+    // Build dots
+    slides.forEach((_, i) => {
+      const d = document.createElement('div');
+      d.className = 'prog-dot' + (i === 0 ? ' active' : '');
+      d.onclick = () => goTo(i);
+      progDots.appendChild(d);
+    });
+
+    function update() {
+      slides.forEach((s, i) => s.classList.toggle('active', i === current));
+      currNum.textContent = String(current + 1).padStart(2, '0');
+      Array.from(progDots.children).forEach((d, i) => d.classList.toggle('active', i === current));
+      notesText.textContent = notes[current] || "";
+      prevBtn.disabled = current === 0;
+      nextBtn.textContent = current === total - 1 ? 'Yekun ✓' : 'Növbəti →';
+    }
+
+    function goTo(i) {
+      if (i >= 0 && i < total) {
+        current = i;
+        update();
+      }
+    }
+
+    function next() {
+      if (current < total - 1) {
+        current++;
+        update();
+      }
+    }
+
+    function prev() {
+      if (current > 0) {
+        current--;
+        update();
+      }
+    }
+
+    nextBtn.onclick = next;
+    prevBtn.onclick = prev;
+    notesBtn.onclick = () => notesDrawer.classList.toggle('open');
+    closeNotes.onclick = () => notesDrawer.classList.remove('open');
+
+    fsBtn.onclick = () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } else {
+        document.exitFullscreen().catch(() => {});
+      }
+    };
+
+    window.onkeydown = (e) => {
+      if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') {
+        e.preventDefault();
+        next();
+      } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+        e.preventDefault();
+        prev();
+      } else if (e.key.toLowerCase() === 's') {
+        notesDrawer.classList.toggle('open');
+      } else if (e.key.toLowerCase() === 'f') {
+        if (!document.fullscreenElement) {
+          document.documentElement.requestFullscreen().catch(() => {});
+        } else {
+          document.exitFullscreen().catch(() => {});
+        }
+      }
+    };
+
+    update();
+  </script>
+</body>
+</html>

@@ -22,6 +22,10 @@ class Client:
     def confirmed(self,path,body):
         return self.send(path,body,proof=self.sca(path,body))
     def balance(self): return self.send('wallet')['availableBalanceMinor']
+    def tbody(self,phone,amount,note='',**extra):
+        """A P2P transfer body with the single-use recipient token the server issues when the recipient is looked up."""
+        token=self.send('transfers/resolve?phone='+urllib.parse.quote(phone))['recipientToken']
+        return {'phone':phone,'amountMinor':amount,'note':note,**extra,'recipientToken':token}
     def qr_body(self,payload,amount,source='WALLET',**extra):
         """A QR payment body with the single-use payment token the server issues when the QR is parsed."""
         token=self.send('payments/qr/parse',{'qrPayload':payload})['paymentToken']
@@ -48,20 +52,20 @@ class Checks(unittest.TestCase):
         self.a.send('topups',{'amountMinor':1235,'source':'CARD'},key=key,status=422)
     def test_04_transfer_cancellation_and_completion(self):
         before=self.a.balance();other=self.b.balance()
-        t=self.a.send('transfers',{'phone':'+994501000002','amountMinor':1000,'note':'pizza'})
+        t=self.a.send('transfers',self.a.tbody('+994501000002',1000,'pizza'))
         self.assertEqual(self.a.balance(),before-1000)
         self.b.send('transfers/'+t['id'],status=403)
         self.a.send('transfers/'+t['id']+'/cancel',{})
         self.assertEqual(self.a.balance(),before)
-        t=self.a.send('transfers',{'phone':'+994501000002','amountMinor':1000,'note':'pizza'})
+        t=self.a.send('transfers',self.a.tbody('+994501000002',1000,'pizza'))
         time.sleep(5.7)
         self.assertEqual(self.a.send('transfers/'+t['id'])['status'],'COMPLETED')
         self.assertEqual(self.a.balance(),before-1000);self.assertEqual(self.b.balance(),other+1000)
     def test_05_no_overspend(self):
-        available=self.b.balance();body={'phone':'+994501000001','amountMinor':6000,'note':'test'}
+        available=self.b.balance()
         results=[]
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
-            for result in pool.map(lambda _:self.b.send('transfers',body,status=(200,422)),range(5)): results.append(result)
+            for result in pool.map(lambda _:self.b.send('transfers',self.b.tbody('+994501000001',6000,'test'),status=(200,422)),range(5)): results.append(result)
         self.assertEqual(sum('id' in r for r in results),4)
         self.assertEqual(sum(r.get('code')=='INSUFFICIENT_FUNDS' for r in results),1)
         self.assertGreaterEqual(self.b.balance(),0)
@@ -77,7 +81,7 @@ class Checks(unittest.TestCase):
         self.b.send('payments/qr',late,status=422)
         self.merchant.send('merchant/payments/'+pay['id']+'/refund',{});self.assertEqual(self.a.balance(),before)
     def test_07_sca_payload_binding_and_replay(self):
-        path='transfers';body={'phone':'+994501000002','amountMinor':7000,'note':'test'}
+        path='transfers';body=self.a.tbody('+994501000002',7000,'test')
         self.a.send(path,body,status=403);proof=self.a.sca(path,body)
         self.a.send(path,{**body,'amountMinor':8000},proof=proof,status=422)
         t=self.a.send(path,body,proof=proof)
@@ -85,7 +89,7 @@ class Checks(unittest.TestCase):
         self.a.send('transfers/'+t['id']+'/cancel',{})
     def test_08_fraud_hold_release(self):
         new=Client('+994501000001','new-device-for-fraud');before=new.balance()
-        t=new.send('transfers',{'phone':'+994501000003','amountMinor':30000,'note':'test'})
+        t=new.send('transfers',new.tbody('+994501000003',30000,'test'))
         self.assertEqual(t['status'],'UNDER_REVIEW');self.assertEqual(new.balance(),before-30000)
         case=next(f for f in self.admin.send('admin/fraud/cases') if f['transferId']==t['id'])
         self.admin.send('admin/fraud/cases/'+case['id']+'/reject',{});self.assertEqual(new.balance(),before)
@@ -129,15 +133,6 @@ class Checks(unittest.TestCase):
         time.sleep(30.2)
         self.a.send('crypto/orders',{'quoteId':q['id'],'riskAccepted':True},status=422)
         self.assertEqual(self.a.balance(),before)
-    def test_12_card_fraud_and_dispute(self):
-        r=self.admin.send('admin/sim/card-auth',{'cardId':'card-demo','merchantName':'Netflix','amountMinor':1700})
-        self.assertEqual(r['reasonCode'],'MERCHANT_MISMATCH')
-        r=self.admin.send('admin/sim/card-auth',{'cardId':'card-demo','merchantName':'Cursor','amountMinor':3400})
-        self.assertEqual(r['decision'],'APPROVED')
-        r=self.admin.send('admin/sim/card-auth',{'cardId':'card-demo','merchantName':'Cursor','amountMinor':34000})
-        self.assertEqual(r['reasonCode'],'CONFIRMATION_REQUIRED')
-        self.a.send('disputes',{'cardId':'card-demo','reason':'Bu mən deyiləm'})
-        self.assertEqual(self.a.send('cards')[0]['status'],'FROZEN')
     def test_13_reconciliation(self):
         r=self.admin.send('admin/reconciliation/run',{})
         self.assertEqual(r['status'],'MATCHED');self.assertEqual(r['differenceMinor'],0)
@@ -275,37 +270,10 @@ class Checks(unittest.TestCase):
         matched=self.a.send('contacts/match',{'phoneHashes':[hashlib.sha256(p.encode()).hexdigest() for p in ['+994501000002','+994509990000']]})
         self.assertTrue(any(m['phone']=='+994501000002' and len(m['phoneHash'])==64 for m in matched['matches']))
         tb=self.a.confirmed('trusted-beneficiaries',{'phone':'+994501000003','nickname':'Leyla'})
-        t=self.a.send('transfers',{'phone':'+994501000003','amountMinor':7000,'note':'Etibarlı alıcıya'})
+        t=self.a.send('transfers',self.a.tbody('+994501000003',7000,'Etibarlı alıcıya'))
         self.assertTrue(t['trustedBeneficiary'])
         self.a.send('transfers/'+t['id']+'/cancel',{})
         self.a.send('trusted-beneficiaries/'+tb['id']+'/delete',{})
-    def test_21_virtual_card_controls_reveal_blocked_merchant_and_anomaly_confirm(self):
-        self.a.send('cards/card-demo/unfreeze',{})
-        rev=self.a.confirmed('cards/card-demo/reveal',{'cardId':'card-demo'})
-        self.assertEqual(len(rev['pan']),16);self.assertEqual(rev['pan'][-4:],'2048')
-        self.a.send('cards/card-demo/blocked-merchants',{'merchantName':'Cursor'})
-        blocked_auth=self.admin.send('admin/sim/card-auth',{'cardId':'card-demo','merchantName':'Cursor','amountMinor':500})
-        self.assertEqual(blocked_auth['reasonCode'],'MERCHANT_BLOCKED')
-        self.a.send('cards/card-demo/blocked-merchants',{'merchantName':'Cursor'})
-        self.a.send('cards/card-demo/controls',{'monthlyLimitMinor':20000,'ecommerceEnabled':True})
-        anom=self.admin.send('admin/sim/card-auth',{'cardId':'card-demo','merchantName':'Cursor','amountMinor':12000})
-        self.assertEqual(anom['reasonCode'],'CONFIRMATION_REQUIRED')
-        self.a.send('card-auth/'+anom['id']+'/confirm',{'amountMinor':13000},status=422)
-        self.a.send('card-auth/'+anom['id']+'/confirm',{},status=403)
-        self.a.confirmed('card-auth/'+anom['id']+'/confirm',{})
-        mismatch=self.admin.send('admin/sim/card-auth',{'cardId':'card-demo','merchantName':'Cursor','amountMinor':13000})
-        self.assertEqual(mismatch['reasonCode'],'CONFIRMATION_REQUIRED')
-        ok_auth=self.admin.send('admin/sim/card-auth',{'cardId':'card-demo','merchantName':'Cursor','amountMinor':12000})
-        self.assertEqual(ok_auth['decision'],'APPROVED')
-        ov=self.admin.send('admin/overview')
-        open_disp=next((d for d in ov['disputes'] if d['status']=='OPEN'),None)
-        if open_disp:
-            res=self.admin.send('admin/disputes/'+open_disp['id']+'/resolve',{'status':'RESOLVED','resolutionNote':'Yoxlanıldı'})
-            self.assertEqual(res['status'],'RESOLVED')
-        self.admin.send('admin/fraud/blacklist',{'target':'+994557776655','reason':'Mule test'})
-        before=self.a.balance()
-        self.a.send('transfers',{'phone':'+994557776655','amountMinor':500,'note':'Test'},status=403)
-        self.assertEqual(self.a.balance(),before)
     def test_22_crypto_deposit_aml_withdrawal_and_budget_alerts(self):
         self.admin.send('admin/feature-flags/crypto.enabled',{'value':True})
         addr=self.a.send('crypto/deposit-address')
@@ -329,13 +297,6 @@ class Checks(unittest.TestCase):
         self.a.send('contacts/match',{},status=422)
         self.a.send('contacts/match',{'phones':['+994501000002']},status=422)
         self.a.send('contacts/match',{'phoneHashes':['not-a-hash']},status=422)
-    def test_24_card_reveal_cannot_be_replayed(self):
-        path='cards/card-demo/reveal';body={'cardId':'card-demo'}
-        key=str(uuid.uuid4());proof=self.a.sca(path,body)
-        result=self.a.send(path,body,key=key,proof=proof)
-        self.assertEqual(len(result['pan']),16)
-        replay=self.a.send(path,body,key=key,proof=proof,status=410)
-        self.assertEqual(replay['code'],'SENSITIVE_REPLAY_EXPIRED')
     def test_25_bitcoin_preview_cannot_bypass_crypto_gate(self):
         self.admin.send('admin/feature-flags/crypto.enabled',{'value':False})
         before=self.a.balance()
@@ -477,8 +438,7 @@ class Checks(unittest.TestCase):
         after=self.a.send('open-banking/overview')
         self.assertFalse(any(c['id']==cid for c in after['consents']))
         self.assertEqual([t for t in self.a.send('open-banking/transactions') if t['consentId']==cid],[])
-        req=urllib.request.Request(SIM_BASE+'/openbanking/accounts',data=json.dumps({'consentId':signed['simConsentId']}).encode(),headers={'Content-Type':'application/json','X-Api-Key':'kampus-local-simulator-key'})
-        with urllib.request.urlopen(req,timeout=10) as r:self.assertEqual(json.load(r),{'status':'REVOKED','accounts':[]})
+        self.assertNotIn('simConsentId',json.dumps(self.a.send('open-banking/overview')));self.assertNotIn('externalId',json.dumps(self.a.send('open-banking/overview')))
         # the same bank can be linked again after revocation
         self.assertEqual(self.a.send('open-banking/consents',{'bankId':'KAPITAL'})['step'],'NOTIFIED')
         self.assertEqual(self.a.balance(),wallet_before)
@@ -508,24 +468,29 @@ class Checks(unittest.TestCase):
         self.assertEqual(pay['fundingSource'],'BANK_CARD');self.assertEqual(self.a.balance(),wallet+3000)
         self.assertEqual(card()['balanceMinor'],start-4200)
         # so does a P2P transfer (cancelled inside the 5 second window the money stays in the wallet)
-        t=self.a.confirmed('transfers',{'phone':'+994501000002','amountMinor':2500,'note':'from card','fundingAccountId':card_id})
+        t=self.a.confirmed('transfers',self.a.tbody('+994501000002',2500,'from card',fundingAccountId=card_id))
         self.assertEqual(t['fundedBy'],'PAŞA Bank '+card()['masked'])
+        self.assertEqual(card()['balanceMinor'],start-6700)
         self.a.send('transfers/'+t['id']+'/cancel',{})
-        self.assertEqual(self.a.balance(),wallet+5500);self.assertEqual(card()['balanceMinor'],start-6700)
-        # the bank enforces the monthly limit the customer signed: 67 of 200 AZN used, 140 more does not fit
-        over={'amountMinor':14000,'source':'BANK_CARD','accountId':card_id}
+        # cancelling inside the window puts the money back on the card it came from, not into the wallet
+        self.assertEqual(self.a.balance(),wallet+3000);self.assertEqual(card()['balanceMinor'],start-4200)
+        # the bank enforces the monthly limit the customer signed: 42 of 200 AZN used, 170 more does not fit
+        over={'amountMinor':17000,'source':'BANK_CARD','accountId':card_id}
         refused=self.a.send('topups',over,proof=self.a.sca('topups',over),status=422)
         self.assertEqual(refused['code'],'CARD_LIMIT');self.assertIn('200.00 AZN',refused['detail'])
-        self.assertEqual(self.a.balance(),wallet+5500);self.assertEqual(card()['balanceMinor'],start-6700)
+        self.assertEqual(self.a.balance(),wallet+3000);self.assertEqual(card()['balanceMinor'],start-4200)
         # a card belongs to its owner, and the wallet is the default when no card is named
         stolen={'amountMinor':1000,'source':'BANK_CARD','accountId':card_id}
         self.b.send('topups',stolen,proof=self.b.sca('topups',stolen),status=403)
-        plain=self.a.confirmed('transfers',{'phone':'+994501000002','amountMinor':100,'note':'wallet'})
+        plain=self.a.confirmed('transfers',self.a.tbody('+994501000002',100,'wallet'))
         self.assertEqual(plain['fundedBy'],'');self.a.send('transfers/'+plain['id']+'/cancel',{})
-        # the bank-side bookings show up as the customer's own movements, not as spending, and the ledger still balances
-        self.a.send('open-banking/consents/'+consent['id']+'/sync',{})
-        booked=[x for x in self.a.send('open-banking/transactions') if x['name'].startswith('Kampus:')]
-        self.assertEqual(len(booked),3);self.assertTrue(all(x['category']=='Daxili köçürmə' for x in booked))
+        # the bank-side bookings arrive on their own (background sync), as the customer's own movements and not as spending; the returned one is gone
+        booked=[]
+        for _ in range(12):
+            booked=[x for x in self.a.send('open-banking/transactions') if x['name'].startswith('Kampus:')]
+            if len(booked)>=2:break
+            time.sleep(1)
+        self.assertEqual(len(booked),2,booked);self.assertTrue(all(x['category']=='Daxili köçürmə' for x in booked))
         self.assertEqual(self.admin.send('admin/reconciliation/run',{})['differenceMinor'],0)
         # revoking stops further payments
         self.a.send('open-banking/consents/'+consent['id']+'/revoke',{})
@@ -536,7 +501,7 @@ class Checks(unittest.TestCase):
         selfie='data:image/jpeg;base64,'+base64.b64encode((pathlib.Path(__file__).resolve().parent/'fixtures'/'selfie.jpg').read_bytes()).decode()
         self.a.send('topups',{'amountMinor':60000,'source':'CARD'})
         before=self.a.balance()
-        body={'phone':'+994501000002','amountMinor':55000,'note':'kyc step-up'}
+        body=self.a.tbody('+994501000002',55000,'kyc step-up')
         # a PIN is required, even for a recipient the customer already trusts
         self.a.send('transfers',body,status=403)
         # a small payment still needs only the PIN
@@ -567,8 +532,9 @@ class Checks(unittest.TestCase):
         self.a.send('auth/sca/kyc',{**kyc,'proof':small['proof']},status=422)
         # a risky device does not skip the check: this transfer would go to manual review, and still needs PIN + face first
         if self.a.balance()<60000:self.a.send('topups',{'amountMinor':60000,'source':'CARD'})
+        risky=None
         phone=Client('+994501000001',device='new-phone-kyc')
-        risky={'phone':'+994501000002','amountMinor':56000,'note':'kyc on a new device'}
+        risky=phone.tbody('+994501000002',56000,'kyc on a new device')
         phone.send('transfers',risky,status=403)
         risky_sca=phone.send('auth/sca',{'pin':'123456','payload':{'action':'transfers','data':risky}})
         self.assertTrue(risky_sca['kycRequired'])
@@ -629,7 +595,7 @@ if __name__=='__main__':
         env={**os.environ,'DATABASE_URL':'jdbc:h2:mem:kampus_test;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1','SIM_URL':SIM_BASE,'PORT':str(api_port)}
         logs=open(pathlib.Path(tmp)/'services.log','w')
         sim=subprocess.Popen(['java','-jar',str(sim_jar),'--server.port='+str(sim_port)],cwd=tmp,env=env,stdout=logs,stderr=logs)
-        api=subprocess.Popen(['java','-jar',str(api_jar),'--kampus.oct-review-after-ms=2500'],cwd=tmp,env=env,stdout=logs,stderr=logs)
+        api=subprocess.Popen(['java','-jar',str(api_jar),'--kampus.oct-review-after-ms=2500','--kampus.ob-sync-ms=1500','--kampus.ob-sync-initial-ms=1000'],cwd=tmp,env=env,stdout=logs,stderr=logs)
         try:
             wait(SIM_BASE+'/health');wait(BASE+'health');time.sleep(.7)
             result=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(Checks))

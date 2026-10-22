@@ -35,6 +35,13 @@ public class OpenBanking {
         return "Digər";
     }
 
+    /** What a client may see of a consent or account row: the bank's own identifiers and internal media references stay on the server. */
+    static Map<String,Object> clean(Map<String,Object> row){
+        var copy=new LinkedHashMap<>(row);
+        for(var key:List.of("simConsentId","externalId","signatureMediaId"))copy.remove(key);
+        return copy;
+    }
+
     @SuppressWarnings("unchecked") List<Map<String,Object>> banks(){return (List<Map<String,Object>>)sim.call("/openbanking/banks",m()).get("banks");}
 
     /** A consent whose bank-side validity has run out is marked locally; its last known data stays visible as stale. */
@@ -58,7 +65,7 @@ public class OpenBanking {
             accounts.add(a);
             if(live.contains(str(a,"consentId"))&&"AZN".equals(str(a,"currency")))total+=num(a,"balanceMinor");
         }
-        return m("consents",consents,"accounts",accounts,"totalBalanceMinor",total,"syncedAt",syncedAt);
+        return m("consents",consents.stream().map(OpenBanking::clean).toList(),"accounts",accounts.stream().map(OpenBanking::clean).toList(),"totalBalanceMinor",total,"syncedAt",syncedAt);
     }
 
     Object read(Auth.User u,String p){
@@ -80,7 +87,7 @@ public class OpenBanking {
                     s.audit(uid,"OPEN_BANKING_CONSENT_"+status,m("bankId",c.get("bankId"),"consentId",c.get("id")));
                 }
             }else expireIfDue(c);
-            return c;
+            return clean(c);
         }
         throw new Problem(404,"NOT_FOUND","Səhifə tapılmadı.");
     }
@@ -120,7 +127,7 @@ public class OpenBanking {
             "offeredCards",remote.get("cards"),"allowedMonths",remote.get("allowedMonths")));
         notifier.send(uid,str(note,"title"),str(note,"body"));
         s.audit(uid,"OPEN_BANKING_CONSENT_REQUESTED",m("bankId",bankId,"consentId",consent.get("id")));
-        return consent;
+        return clean(consent);
     }
 
     @SuppressWarnings("unchecked") List<Map<String,Object>> offered(Map<String,Object> c){return (List<Map<String,Object>>)c.getOrDefault("offeredCards",List.of());}
@@ -140,7 +147,7 @@ public class OpenBanking {
         var actions=new ArrayList<>(List.of("TURN_LEFT","TURN_RIGHT","BLINK","SMILE"));Collections.shuffle(actions);
         c.put("accountIds",chosen);c.put("months",months);c.put("monthlyLimitMinor",limit);c.put("step","SELECTED");c.put("termsFrom",now());c.put("signActions",new ArrayList<>(actions.subList(0,3)));
         s.save("OB_CONSENT",c);
-        return c;
+        return clean(c);
     }
 
     Map<String,Object> doc(Auth.User u,Map<String,Object> c,Map<String,Object> signature){
@@ -179,6 +186,21 @@ public class OpenBanking {
         return sync(uid,c,notifier);
     }
 
+    /** Takes a charge back on the bank side and restores the card balance Kampus shows. False when the bank could not do it. */
+    boolean refundCharge(String uid,String simConsentId,String chargeId,String accountId,long amount){
+        try{
+            var r=sim.call("/openbanking/reverse",m("consentId",simConsentId,"chargeId",chargeId));
+            if(!Boolean.TRUE.equals(r.get("reversed")))return false;
+            try{
+                var account=s.own("OB_ACCOUNT",accountId,uid);
+                long back=num(account,"balanceMinor")+amount;
+                account.put("balanceMinor",back);account.put("availableMinor",back);s.save("OB_ACCOUNT",account);
+            }catch(Problem gone){/* the consent was revoked meanwhile: nothing local to restore */}
+            s.audit(uid,"OPEN_BANKING_CHARGE_REVERSED",m("chargeId",chargeId,"amountMinor",amount));
+            return true;
+        }catch(Problem e){return false;}
+    }
+
     /** Pays out of a shared card. The bank applies the limit and balance; a refusal becomes a clear message. */
     Map<String,Object> charge(String uid,String accountId,long amount,String reference){
         var account=s.own("OB_ACCOUNT",accountId,uid);
@@ -197,7 +219,19 @@ public class OpenBanking {
         }
         account.put("balanceMinor",r.get("balanceAfterMinor"));account.put("availableMinor",r.get("balanceAfterMinor"));s.save("OB_ACCOUNT",account);
         s.audit(uid,"OPEN_BANKING_CHARGE",m("bankId",consent.get("bankId"),"accountId",accountId,"amountMinor",amount,"chargeId",r.get("chargeId")));
-        return m("chargeId",r.get("chargeId"),"simConsentId",consent.get("simConsentId"),"cardLabel",str(consent,"bankName")+" "+str(account,"masked"));
+        return m("chargeId",r.get("chargeId"),"simConsentId",consent.get("simConsentId"),"accountId",accountId,"cardLabel",str(consent,"bankName")+" "+str(account,"masked"));
+    }
+
+    /** Keeps every live consent fresh without the customer pressing Refresh; a bank that does not answer is retried next round. */
+    void syncAll(Notifier notifier){
+        var owners=new HashMap<String,String>();
+        for(var row:s.db.queryForList("SELECT id,owner_id FROM records WHERE kind='OB_CONSENT'"))owners.put(row.get("id").toString(),row.get("owner_id").toString());
+        for(var c:s.list("OB_CONSENT",null)){
+            expireIfDue(c);
+            String owner=owners.get(str(c,"id"));
+            if(owner==null||!"AUTHORIZED".equals(str(c,"status")))continue;
+            try{sync(owner,c,notifier);}catch(Problem e){/* next round */}
+        }
     }
 
     /** Spend per category this month across Kampus and linked banks; budgets alert on the combined figure. */
@@ -211,12 +245,12 @@ public class OpenBanking {
     @SuppressWarnings("unchecked")
     Map<String,Object> sync(String uid,Map<String,Object> consent,Notifier notifier){
         String consentId=str(consent,"id");
-        if(!"AUTHORIZED".equals(str(consent,"status")))return m("consent",consent,"added",0,"synced",false);
+        if(!"AUTHORIZED".equals(str(consent,"status")))return m("consent",clean(consent),"added",0,"synced",false);
         var accountsResponse=sim.call("/openbanking/accounts",m("consentId",consent.get("simConsentId")));
         String bankStatus=str(accountsResponse,"status");
         if(!bankStatus.equals("AUTHORIZED")){
             consent.put("status",bankStatus);s.save("OB_CONSENT",consent);
-            return m("consent",consent,"added",0,"synced",false);
+            return m("consent",clean(consent),"added",0,"synced",false);
         }
         String stamp=now();
         var ours=new HashMap<String,Map<String,Object>>();
@@ -264,7 +298,7 @@ public class OpenBanking {
         }
         consent.put("lastSyncAt",stamp);s.save("OB_CONSENT",consent);
         s.audit(uid,"OPEN_BANKING_SYNC",m("bankId",consent.get("bankId"),"consentId",consentId,"added",count));
-        return m("consent",consent,"added",count,"synced",true);
+        return m("consent",clean(consent),"added",count,"synced",true);
     }
 
     /** Revoking removes everything fetched under the consent; the bank is told as well. */
@@ -277,6 +311,6 @@ public class OpenBanking {
         consent.put("status","REVOKED");consent.put("revokedAt",now());consent.put("remoteRevoked",remote);
         s.save("OB_CONSENT",consent);
         s.audit(uid,"OPEN_BANKING_REVOKED",m("bankId",consent.get("bankId"),"consentId",consentId,"remoteRevoked",remote));
-        return consent;
+        return clean(consent);
     }
 }

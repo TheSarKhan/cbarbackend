@@ -92,3 +92,10 @@ Fiziki Android cihazında quraşdırma, kamera, biometrika və iki telefonlu ax�
 - Kartdan ödəniş: `topups` (`source=BANK_CARD`), `payments/qr` (`fundingSource=BANK_CARD`) və `transfers` (`fundingAccountId`). Hamısı PIN tələb edir. Bank seçilmiş kart, aylıq limit və qalığı yoxlayır (`CARD_LIMIT`, `CARD_INSUFFICIENT_FUNDS`); rədd edilsə heç nə dəyişmir. Bank tərəfdəki yazılar müştərinin öz hərəkətləri kimi (`Daxili köçürmə`) görünür və xərc sayılmır. Ledger üzləşdirməsi sıfır fərqlə qalır.
 - Yoxlama: HTTP `test_29` (bütün axın, yoxlamalar, ləğv), `test_29b` (bank müştərini tanımır), `test_33` (üç ödəniş növü, limit, başqasının kartı, ləğvdən sonra); `ConsentDocumentTests`. `./scripts/check.sh` keçir (36 HTTP testi). Brauzerdə Chrome ilə bütün axın (saxta kamera və MediaPipe əvəzləyicisi ilə) və üç ödəniş növü yoxlanıldı, PDF yüklənib açıldı.
 - Yoxlanmayıb: fiziki telefonda bank axını, PDF-in telefonda paylaşım pəncərəsi ilə saxlanması, real kamera ilə imza.
+
+## Tokenizasiyanın tamamlanması, arxa plan sinxronizasiyası, kart qaytarması, köhnə kartların silinməsi — 22 oktyabr
+
+- P2P alıcı tokeni: `transfers/resolve` token verir, `transfers` PIN-dən sonra onu xərcləyir (başqa istifadəçiyə, başqa nömrəyə və ya ikinci dəfə keçmir). Bankın identifikatorları (`simConsentId`, `externalId`) müştəriyə göstərilmir.
+- Arxa plan sinxronizasiyası: bütün aktiv icazələr hər 5 dəqiqədən bir (`kampus.ob-sync-ms`) yenilənir; test 1,5 saniyəyə qurulub və kart ödənişlərinin bank yazılarının «Yenilə» basılmadan gəldiyini yoxlayır.
+- Kartdan P2P köçürmə ləğv, rədd, alınmama və yoxlama müddətinin bitməsi hallarında həmin karta qaytarılır (`BANK_CARD_REFUND`, bankda qaytarma); ləğv testi kartın qalığının və aylıq limitin bərpasını yoxlayır.
+- Virtual kartlar, mübahisələr və kart avtorizasiyası backend, simulyator, mobil və admin paneldən silindi (3 köhnə HTTP testi və 2 unit test də). `./scripts/check.sh` keçir (33 HTTP testi).
