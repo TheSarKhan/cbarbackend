@@ -32,7 +32,9 @@ import static az.kampus.Store.*;
   var u=s.db.queryForList("SELECT id,name FROM users WHERE phone=? AND role='USER'",phone);
   if(!u.isEmpty()){var r=u.getFirst();return m("channel","INTERNAL","recipientId",r.get("id"),"maskedName",r.get("name"),"phone",phone);}
   if(phone.matches("\\+99455[0-9]{7}"))return m("channel","ANIPAY","recipientId","ANIPAY_SETTLEMENT","maskedName","Demo alıcı","bankName","Mock Bank","phone",phone);
-  throw new Problem(404,"RECIPIENT_NOT_FOUND","Nömrə Kampus və AniPay kataloqunda yoxdur.");
+  // AniPay also accepts the recipient's FIN code; the identifier travels in the same "phone" field so tokens, risk rules and trusted beneficiaries work unchanged
+  if(phone.matches("[A-Z0-9]{7}"))return m("channel","ANIPAY","recipientId","ANIPAY_SETTLEMENT","maskedName","Demo alıcı","bankName","Mock Bank","phone",phone,"fin",phone.substring(0,2)+"***"+phone.substring(5));
+  throw new Problem(404,"RECIPIENT_NOT_FOUND","Nömrə və ya FİN kod Kampus və AniPay kataloqunda yoxdur.");
  }
  boolean isBlacklisted(String phone){return s.list("BLACKLIST",null).stream().anyMatch(x->phone.equals(str(x,"target")));}
  Map<String,Object> risk(Auth.User u,Map<String,Object>b){long a=amount(b);int score=0;var rules=new ArrayList<String>();String note=str(b,"note").toLowerCase(Locale.forLanguageTag("az")),phone=str(b,"phone");
