@@ -61,7 +61,6 @@ import static az.kampus.Store.*;
   if(p.startsWith("card-transfers")||p.startsWith("recipient-cards"))return cardTransfers.write(u,p,b,proof);
   if(p.startsWith("open-banking/"))return openBanking.write(u,p,b,this::notify);
   if(p.equals("analytics/consent"))return insights.setConsent(uid,yes(b,"enabled"));
-  if(p.matches("analytics/anomalies/[^/]+/feedback"))return insights.feedback(uid,parts[2],str(b,"decision"),this::notify);
   if(p.equals("analytics/budgets/apply"))return insights.applyBudgets(uid,b.get("categories") instanceof List<?> list?list:List.of());
   if(p.equals("topups")){long a=amount(b);Problem.require(l.balance("wallet:"+uid)+a<=200_000,"WALLET_LIMIT","Demo hesabının balans limiti 2 000 AZN-dir.");Problem.require(Set.of("CARD","OPEN_BANKING","TERMINAL","BANK_CARD").contains(str(b,"source")),"INVALID_SOURCE","Doldurma üsulunu seçin.");String sourceLabel=str(b,"source");
    if(sourceLabel.equals("BANK_CARD")){scaIf(u,proof,p,b,true);sourceLabel=str(openBanking.charge(uid,str(b,"accountId"),a,"Balans artırma"),"cardLabel");}else sim.call("/bank/topup",m("amountMinor",a,"source",b.get("source")));

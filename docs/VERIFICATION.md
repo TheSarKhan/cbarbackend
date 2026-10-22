@@ -102,12 +102,12 @@ Fiziki Android cihazında quraşdırma, kamera, biometrika və iki telefonlu ax�
 
 ## Xərc analitikası — 22 oktyabr
 
-- Modul: `Insights` (statistika, saf funksiyalar), `SyntheticSpending` (bilinən nümunələri olan generator, həm demo tarixçə, həm test üçün), `InsightsService` (razılıq, cavablar, bildirişlər, admin aqreqatı). API: `analytics/insights`, `analytics/consent`, `analytics/anomalies/{id}/feedback`, `analytics/budgets/apply`, `admin/analytics`; ana səhifə üçün `dashboard.insightsBrief`.
+- Modul: `Insights` (statistika, saf funksiyalar), `SyntheticSpending` (bilinən nümunələri olan generator, həm demo tarixçə, həm test üçün), `InsightsService` (razılıq, bildirişlər, admin aqreqatı). API: `analytics/insights`, `analytics/consent`, `analytics/budgets/apply`, `admin/analytics`; ana səhifə üçün `dashboard.insightsBrief`.
 - Keyfiyyət sintetik data ilə ölçülür (`InsightsTests`, 40 nəfər, 6 ay, hər birinə 3 qeyri-adi ödəniş qoyulub):
   - qeyri-adi ödənişlər: recall 98,3%, precision 92,2%; heç nə qoyulmayan datada nəfər başına 3 həftədə 0,20 yalançı xəbərdarlıq;
   - təkrarlanan ödənişlər (30 nəfər): recall 100%, yalançı aşkarlama 0;
   - ay sonu proqnozu (30 nəfər, ayın 12-si və 20-sində): median xəta 8,0%; faktiki nəticə göstərilən 80% aralığın içində 72% hallarda.
-- HTTP `test_34`: proqnoz, abunəliklər, qeyri-adi ödənişin bir dəfə bildirilməsi və bildirişi, cavablar (başqası cavab verə bilmir, ikinci cavab olmur), büdcə təklifinin tətbiqi, razılığın söndürülməsi, admin aqreqatda söndürənin və üç nəfərdən az qrupun gizlədilməsi. `./scripts/check.sh` keçir (34 HTTP testi).
+- HTTP `test_34`: proqnoz, abunəliklər, qeyri-adi ödənişin bir dəfə bildirilməsi və bildirişi, büdcə təklifinin tətbiqi, razılığın söndürülməsi, admin aqreqatda söndürənin və üç nəfərdən az qrupun gizlədilməsi. `./scripts/check.sh` keçir (34 HTTP testi).
 - Mobil: Analitika ekranı (proqnoz, kartlar, qeyri-adi ödənişlər, kateqoriyalar, 6 ay, təkrarlanan ödənişlər, büdcə, həftənin günləri), ana səhifə kartı, tarixçədə «Qeyri-adi» və «Təkrar» nişanları, Profildə «Xərc təhlili» düyməsi; Chrome-da yoxlanıb.
 - Yoxlanmayıb: real istifadəçi datası; fiziki telefonda ekranlar; admin analitika səhifəsi yalnız tip yoxlamasından keçib, brauzerdə baxılmayıb.
 

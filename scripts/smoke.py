@@ -592,16 +592,6 @@ class Checks(unittest.TestCase):
         brief=self.a.send('dashboard')['insightsBrief']
         self.assertTrue(brief['enabled'] and brief['openAnomalies']>=2)
         self.assertIn('ANOMALY',brief['flags'].values());self.assertIn('RECURRING',brief['flags'].values())
-        # answering: nobody else may answer, "mine" is remembered, "not mine" is reported
-        mine,not_mine=view['anomalies'][0],view['anomalies'][1]
-        self.b.send('analytics/anomalies/'+mine['id']+'/feedback',{'decision':'MINE'},status=403)
-        self.a.send('analytics/anomalies/'+mine['id']+'/feedback',{'decision':'MAYBE'},status=422)
-        self.assertEqual(self.a.send('analytics/anomalies/'+mine['id']+'/feedback',{'decision':'MINE'})['status'],'MINE')
-        self.a.send('analytics/anomalies/'+mine['id']+'/feedback',{'decision':'NOT_MINE'},status=422)
-        self.assertEqual(self.a.send('analytics/anomalies/'+not_mine['id']+'/feedback',{'decision':'NOT_MINE'})['status'],'NOT_MINE')
-        left={x['id'] for x in self.a.send('analytics/insights')['anomalies']}
-        self.assertFalse({mine['id'],not_mine['id']}&left)
-        self.assertTrue(any(n['title']=='Təhlükəsizlik tövsiyəsi' for n in self.a.send('dashboard')['notifications']))
         # budget suggestions are applied from the server's own numbers
         suggestions=self.a.send('analytics/insights')['budgetSuggestions']
         self.assertTrue(suggestions)

@@ -22,9 +22,7 @@ public class InsightsService {
   Instant now=Instant.now();
   var spends=Insights.spending(s.list("TX",uid),s.list("OB_TX",uid));
   var recurring=Insights.recurring(spends,now);
-  var ignoredTx=new HashSet<String>();var ignoredKeys=new HashSet<String>();
-  for(var a:s.list("ANOMALY",uid))if("MINE".equals(str(a,"status"))){ignoredTx.add(str(a,"txId"));ignoredKeys.add(str(a,"merchantKey"));}
-  return new Run(spends,recurring,Insights.anomalies(spends,now,ignoredTx,ignoredKeys),now);
+  return new Run(spends,recurring,Insights.anomalies(spends,now,Set.of(),Set.of()),now);
  }
 
  /** Records every unusual payment once and tells the customer; returns the records that are still waiting for an answer. */
@@ -79,7 +77,7 @@ public class InsightsService {
   var recurringKeys=run.recurring().stream().map(Insights.Recurring::key).collect(Collectors.toSet());
   var flags=new LinkedHashMap<String,String>();
   for(var sp:run.spends())if(recurringKeys.contains(sp.key()))flags.put(sp.id(),"RECURRING");
-  for(var a:s.list("ANOMALY",uid))if(!"MINE".equals(str(a,"status")))flags.put(str(a,"txId"),"ANOMALY");
+  for(var a:s.list("ANOMALY",uid))flags.put(str(a,"txId"),"ANOMALY");
   return m("enabled",true,"monthSpentMinor",forecast.get("monthSpentMinor"),"projectedMinor",forecast.get("projectedMinor"),"vsLastMonthPct",forecast.get("vsLastMonthPct"),
    "openAnomalies",open,"recurringCount",run.recurring().size(),"flags",flags);
  }
@@ -89,18 +87,6 @@ public class InsightsService {
   if(pref==null)pref=s.add("PREF",uid,m("analytics",on));else{pref.put("analytics",on);s.save("PREF",pref);}
   s.audit(uid,on?"ANALYTICS_ENABLED":"ANALYTICS_DISABLED",m());
   return m("enabled",on);
- }
-
- /** The customer's answer about an unusual payment. "Not me" is reported and the customer is pointed to the PIN. */
- Map<String,Object> feedback(String uid,String id,String decision,Notifier notifier){
-  Problem.require(Set.of("MINE","NOT_MINE").contains(decision),"INVALID_DECISION","Cavabı seçin: bu mənəm və ya bu mən deyiləm.");
-  var a=s.own("ANOMALY",id,uid);
-  Problem.require("OPEN".equals(str(a,"status")),"ALREADY_ANSWERED","Bu ödənişə artıq cavab verilib.");
-  a.put("status",decision);a.put("answeredAt",Store.now());s.save("ANOMALY",a);
-  s.audit(uid,"ANOMALY_"+decision,m("anomalyId",id,"txId",a.get("txId"),"amountMinor",a.get("amountMinor")));
-  if(decision.equals("NOT_MINE")&&notifier!=null)
-   notifier.send(uid,"Təhlükəsizlik tövsiyəsi","Bu ödənişi sən etməmisənsə, PIN-ini dəyiş və şübhəli cihazları yoxla. Qeyd olundu və admin görəcək.");
-  return a;
  }
 
  /** Applies the suggested limits for the categories asked for. The numbers are recomputed here, not taken from the client. */
