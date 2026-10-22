@@ -575,6 +575,52 @@ class Checks(unittest.TestCase):
         seeded=next(k for k in records if k['userId']=='u1')
         self.assertTrue(seeded['finToken'].startswith('tok_fin_'))
         self.assertIn('•',seeded['finMasked']);self.assertNotIn('7AZ1234',json.dumps(records))
+    def test_34_spending_analytics(self):
+        view=self.a.send('analytics/insights')
+        self.assertTrue(view['enabled'])
+        f=view['forecast']
+        self.assertGreater(f['projectedMinor'],0);self.assertLessEqual(f['lowMinor'],f['projectedMinor']);self.assertGreaterEqual(f['highMinor'],f['projectedMinor'])
+        # six months of demo history: subscriptions are found, with their next date
+        keys={r['key'] for r in view['recurring']}
+        self.assertTrue({'NETFLIX','SPOTIFY'}<=keys,keys)
+        self.assertEqual(len(view['breakdown']['months']),6)
+        self.assertTrue(view['cards'] and all('null' not in c['body'] for c in view['cards']))
+        # planted unusual payments are reported once, with a notification
+        self.assertGreaterEqual(len(view['anomalies']),2)
+        self.assertEqual(len(self.a.send('analytics/insights')['anomalies']),len(view['anomalies']))
+        self.assertTrue(any(n['title']=='Qeyri-adi ödəniş' for n in self.a.send('dashboard')['notifications']))
+        brief=self.a.send('dashboard')['insightsBrief']
+        self.assertTrue(brief['enabled'] and brief['openAnomalies']>=2)
+        self.assertIn('ANOMALY',brief['flags'].values());self.assertIn('RECURRING',brief['flags'].values())
+        # answering: nobody else may answer, "mine" is remembered, "not mine" is reported
+        mine,not_mine=view['anomalies'][0],view['anomalies'][1]
+        self.b.send('analytics/anomalies/'+mine['id']+'/feedback',{'decision':'MINE'},status=403)
+        self.a.send('analytics/anomalies/'+mine['id']+'/feedback',{'decision':'MAYBE'},status=422)
+        self.assertEqual(self.a.send('analytics/anomalies/'+mine['id']+'/feedback',{'decision':'MINE'})['status'],'MINE')
+        self.a.send('analytics/anomalies/'+mine['id']+'/feedback',{'decision':'NOT_MINE'},status=422)
+        self.assertEqual(self.a.send('analytics/anomalies/'+not_mine['id']+'/feedback',{'decision':'NOT_MINE'})['status'],'NOT_MINE')
+        left={x['id'] for x in self.a.send('analytics/insights')['anomalies']}
+        self.assertFalse({mine['id'],not_mine['id']}&left)
+        self.assertTrue(any(n['title']=='Təhlükəsizlik tövsiyəsi' for n in self.a.send('dashboard')['notifications']))
+        # budget suggestions are applied from the server's own numbers
+        suggestions=self.a.send('analytics/insights')['budgetSuggestions']
+        self.assertTrue(suggestions)
+        applied=self.a.send('analytics/budgets/apply',{'categories':[suggestions[0]['category']]})
+        self.assertEqual(len(applied),1);self.assertEqual(applied[0]['limitMinor'],suggestions[0]['suggestedMinor'])
+        self.assertNotIn(suggestions[0]['category'],{x['category'] for x in self.a.send('analytics/insights')['budgetSuggestions']})
+        # the customer can switch the analysis off: nothing is computed or shown, and the admin overview leaves them out
+        agg=self.admin.send('admin/analytics')
+        self.assertTrue(agg['enoughUsers']);self.assertGreaterEqual(agg['users'],3)
+        self.assertNotIn('userId',json.dumps(agg))
+        self.assertEqual(self.a.send('analytics/consent',{'enabled':False}),{'enabled':False})
+        self.assertEqual(self.a.send('analytics/insights'),{'enabled':False})
+        self.assertFalse(self.a.send('dashboard')['insightsBrief']['enabled'])
+        self.assertEqual(self.admin.send('admin/analytics')['users'],agg['users']-1)
+        # fewer than three people: the admin sees counts only, no breakdowns
+        self.b.send('analytics/consent',{'enabled':False})
+        small=self.admin.send('admin/analytics')
+        self.assertFalse(small['enoughUsers']);self.assertNotIn('categories',small)
+        for client in (self.a,self.b):client.send('analytics/consent',{'enabled':True})
 
 def wait(url):
     for _ in range(150):

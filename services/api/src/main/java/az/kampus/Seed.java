@@ -3,13 +3,32 @@ import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import java.util.LinkedHashMap;
 import static az.kampus.Store.*;
 @Component public class Seed implements ApplicationRunner {
  @org.springframework.beans.factory.annotation.Value("${kampus.demo-pin}") String demoPin;
  @org.springframework.beans.factory.annotation.Value("${kampus.admin-pin}") String adminPin;
  final Store s;final Ledger l;final Auth a;final Tokens tokens;
  Seed(Store s,Ledger l,Auth a,Tokens tokens){this.s=s;this.l=l;this.a=a;this.tokens=tokens;}
- @Override @Transactional public void run(ApplicationArguments args){s.lock();for(var kyc:s.list("KYC",null)){kyc.put("status","DEMO_VERIFIED");kyc.put("liveness","DEMO_SIMULATED");kyc.put("mediaStored",false);kyc.remove("artifactCipher");kyc.remove("livenessPassed");tokens.protect(kyc);s.save("KYC",kyc);}if(s.db.queryForObject("SELECT COUNT(*) FROM users",Long.class)>0)return;
+ @Override @Transactional public void run(ApplicationArguments args){base();history();}
+
+ /** Six months of believable spending for the four demo students, so the analytics have something to read. Written once; income and spending cancel out, so the ledger and the wallet balances do not move. */
+ void history(){
+  s.lock();
+  if(s.list("SETTING","SYSTEM").stream().anyMatch(x->"demo.history.v1".equals(x.get("id"))))return;
+  l.account("merchant:demo-history","C");
+  for(int i=1;i<=4;i++){
+   String uid="u"+i;
+   if(s.db.queryForObject("SELECT COUNT(*) FROM users WHERE id=?",Long.class,uid)==0)continue;
+   var result=SyntheticSpending.generate(i,java.time.Instant.now(),6,i==1?3:i==2?1:0,true);
+   for(var t:result.txs()){var row=new LinkedHashMap<>(t);row.remove("synthetic");row.put("id",uid+"-"+row.get("id"));row.put("demoHistory",true);s.add("TX",uid,row);}
+   l.post("TOPUP","Demo tarixçə","CUSTOMER_FUNDS_BANK","wallet:"+uid,result.in());
+   l.post("DEMO_HISTORY","Demo tarixçə","wallet:"+uid,"merchant:demo-history",result.out());
+  }
+  s.add("SETTING","SYSTEM",m("id","demo.history.v1","value",true));
+ }
+
+ void base(){s.lock();for(var kyc:s.list("KYC",null)){kyc.put("status","DEMO_VERIFIED");kyc.put("liveness","DEMO_SIMULATED");kyc.put("mediaStored",false);kyc.remove("artifactCipher");kyc.remove("livenessPassed");tokens.protect(kyc);s.save("KYC",kyc);}if(s.db.queryForObject("SELECT COUNT(*) FROM users",Long.class)>0)return;
   for(String acc:new String[]{"CUSTOMER_FUNDS_BANK","OWN_FUNDS_BANK","CREDIT_RECEIVABLE","CARD_SETTLEMENT","ANIPAY_SETTLEMENT","VASP_SETTLEMENT","LENDER_SETTLEMENT"})l.account(acc,"D");
   l.account("FEE_INCOME","C");l.account("CAPITAL","C");l.post("CAPITAL","Demo öz kapitalı","OWN_FUNDS_BANK","CAPITAL",75_000_000);
   String[] names={"Aytən Məmmədova","Murad Əliyev","Leyla Həsənova","Kamran Quliyev","Kampus Admin","Uyğunluq əməkdaşı","Kafe Xazar"};
