@@ -29,8 +29,8 @@ import static az.kampus.Store.*;
  }
  void payout(String debit,long amount){l.post("SETTLEMENT","Demo bank hesablaşması",debit,"CUSTOMER_FUNDS_BANK",amount);}
  Map<String,Object> resolve(String phone){
-  var u=s.db.queryForList("SELECT id,name FROM users WHERE phone=? AND role='USER'",phone);
-  if(!u.isEmpty()){var r=u.getFirst();return m("channel","INTERNAL","recipientId",r.get("id"),"maskedName",r.get("name"),"phone",phone);}
+  var u=s.db.queryForList("SELECT id,name,avatar FROM users WHERE phone=? AND role='USER'",phone);
+  if(!u.isEmpty()){var r=u.getFirst();return m("channel","INTERNAL","recipientId",r.get("id"),"maskedName",r.get("name"),"phone",phone,"avatar",r.get("avatar"));}
   if(phone.matches("\\+99455[0-9]{7}"))return m("channel","ANIPAY","recipientId","ANIPAY_SETTLEMENT","maskedName","Demo alıcı","bankName","Mock Bank","phone",phone);
   // AniPay also accepts the recipient's FIN code; the identifier travels in the same "phone" field so tokens, risk rules and trusted beneficiaries work unchanged
   if(phone.matches("[A-Z0-9]{7}"))return m("channel","ANIPAY","recipientId","ANIPAY_SETTLEMENT","maskedName","Demo alıcı","bankName","Mock Bank","phone",phone,"fin",phone.substring(0,2)+"***"+phone.substring(5));
@@ -69,7 +69,7 @@ import static az.kampus.Store.*;
    l.post("TOPUP","Demo balans artırma","CUSTOMER_FUNDS_BANK","wallet:"+uid,a);notify(uid,"Balans artırıldı",String.format(Locale.ROOT,"%.2f AZN",a/100.0));return tx(uid,"TOPUP","Balans artırma · "+sourceLabel,a,"IN","Daxilolmalar");}
   if(p.equals("topups/terminal-code")){long a=amount(b);Problem.require(l.balance("wallet:"+uid)+a<=200_000,"WALLET_LIMIT","Demo hesabının balans limiti 2 000 AZN-dir.");String code=String.format("%08d",new java.security.SecureRandom().nextInt(100_000_000));return s.add("TERMINAL_CODE",uid,m("code",code,"amountMinor",a,"status","ACTIVE","expiresAt",System.currentTimeMillis()+900_000));}
   if(p.equals("topups/terminal-redeem")){String code=str(b,"code");var tc=s.list("TERMINAL_CODE",uid).stream().filter(x->code.equals(str(x,"code"))).findFirst().orElseThrow(()->new Problem(404,"CODE_NOT_FOUND","Terminal kodu tapılmadı."));Problem.require(str(tc,"status").equals("ACTIVE")&&num(tc,"expiresAt")>System.currentTimeMillis(),"CODE_EXPIRED","Terminal kodunun vaxtı bitib və ya istifadə olunub.");long a=num(tc,"amountMinor");Problem.require(l.balance("wallet:"+uid)+a<=200_000,"WALLET_LIMIT","Demo hesabının balans limiti 2 000 AZN-dir.");sim.call("/bank/topup",m("amountMinor",a,"source","TERMINAL","terminalCode",code));l.post("TOPUP","Terminal kodu ilə balans artırma","CUSTOMER_FUNDS_BANK","wallet:"+uid,a);tc.put("status","USED");s.save("TERMINAL_CODE",tc);notify(uid,"Terminal ödənişi qəbul edildi",String.format(Locale.ROOT,"%.2f AZN · Kod %s",a/100.0,code));return tx(uid,"TOPUP","Terminal · "+code,a,"IN","Daxilolmalar");}
-  if(p.equals("trusted-beneficiaries")){var to=resolve(str(b,"phone"));Problem.require(!uid.equals(to.get("recipientId")),"SELF_TRANSFER","Özünüzü əlavə edə bilməzsiniz.");auth.requireSca(u,proof,p,b);for(var old:s.list("TRUSTED_BENEFICIARY",uid))if(str(b,"phone").equals(str(old,"phone")))return old;return s.add("TRUSTED_BENEFICIARY",uid,m("phone",b.get("phone"),"recipientId",to.get("recipientId"),"maskedName",to.get("maskedName"),"channel",to.get("channel"),"nickname",str(b,"nickname").isBlank()?to.get("maskedName"):str(b,"nickname")));}
+  if(p.equals("trusted-beneficiaries")){var to=resolve(str(b,"phone"));Problem.require(!uid.equals(to.get("recipientId")),"SELF_TRANSFER","Özünüzü əlavə edə bilməzsiniz.");auth.requireSca(u,proof,p,b);for(var old:s.list("TRUSTED_BENEFICIARY",uid))if(str(b,"phone").equals(str(old,"phone")))return old;return s.add("TRUSTED_BENEFICIARY",uid,m("phone",b.get("phone"),"recipientId",to.get("recipientId"),"maskedName",to.get("maskedName"),"channel",to.get("channel"),"nickname",str(b,"nickname").isBlank()?to.get("maskedName"):str(b,"nickname"),"avatar",to.get("avatar")));}
   if(p.matches("trusted-beneficiaries/[^/]+/delete")){var tb=s.own("TRUSTED_BENEFICIARY",parts[1],uid);s.db.update("DELETE FROM records WHERE kind='TRUSTED_BENEFICIARY' AND id=?",tb.get("id"));return m("deleted",true,"id",tb.get("id"));}
   if(p.equals("contacts/match")){
    Problem.require(!b.containsKey("phones"),"HASHED_CONTACTS_REQUIRED","Kontaktları SHA-256 heşləri ilə göndərin.");
@@ -79,9 +79,9 @@ import static az.kampus.Store.*;
    var requested=new HashSet<String>();
    for(Object hash:hashes){String h=String.valueOf(hash).toLowerCase(Locale.ROOT);Problem.require(h.matches("[0-9a-f]{64}"),"INVALID_CONTACT_HASH","SHA-256 heşi yanlışdır.");requested.add(h);}
    var matches=new ArrayList<Map<String,Object>>();
-   if(!requested.isEmpty())for(var r:s.db.queryForList("SELECT id,name,phone FROM users WHERE role='USER' AND id<>?",uid)){
+   if(!requested.isEmpty())for(var r:s.db.queryForList("SELECT id,name,phone,avatar FROM users WHERE role='USER' AND id<>?",uid)){
     String ph=String.valueOf(r.get("phone")),h=Auth.sha256(ph);
-    if(requested.contains(h))matches.add(m("userId",r.get("id"),"maskedName",r.get("name"),"phone",ph,"phoneHash",h));
+    if(requested.contains(h))matches.add(m("userId",r.get("id"),"maskedName",r.get("name"),"phone",ph,"phoneHash",h,"avatar",r.get("avatar")));
    }
    return m("matches",matches);
   }

@@ -238,8 +238,10 @@ class Checks(unittest.TestCase):
             self.a.send('auth/register',{**base_reg,**patch},status=422)
         without_kyc={k:v for k,v in base_reg.items() if k not in ('facesCount','simaSigned')}
         self.a.send('auth/register',without_kyc,status=422)
-        reg=self.a.send('auth/register',base_reg)
+        self.a.send('auth/register',{**base_reg,'avatar':9},status=422)
+        reg=self.a.send('auth/register',{**base_reg,'avatar':3})
         self.assertIn('accessToken',reg)
+        self.assertEqual(reg['user']['avatar'],3)
         self.assertEqual(reg['user']['name'],'Elvin Kərimov')
         self.assertEqual(reg['user']['pinLength'],4)
         self.assertEqual(self.a.send('auth/identify',{'phone':'+994509998877'}),{'registered':True,'pinLength':4})

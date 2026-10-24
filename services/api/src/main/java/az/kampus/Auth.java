@@ -25,7 +25,9 @@ import static az.kampus.Store.*;
  long kycLimit(){return kycStepUpMinor;}
  static String sha256(String v){try{var md=java.security.MessageDigest.getInstance("SHA-256");return java.util.HexFormat.of().formatHex(md.digest(v.getBytes(java.nio.charset.StandardCharsets.UTF_8)));}catch(Exception e){throw new RuntimeException(e);}}
  record User(String id,String name,String phone,String role,String device,int pinLength){User(String id,String name,String phone,String role,String device){this(id,name,phone,role,device,6);}}
- Map<String,Object> publicUser(User u){return m("id",u.id,"name",u.name,"phone",u.phone,"role",u.role,"pinLength",u.pinLength);}
+ Map<String,Object> publicUser(User u){return m("id",u.id,"name",u.name,"phone",u.phone,"role",u.role,"pinLength",u.pinLength,"avatar",avatarOf(u.id));}
+ /** The face the person picked when registering (0-7), or null for accounts created before the choice existed. */
+ Integer avatarOf(String userId){var rows=s.db.queryForList("SELECT avatar FROM users WHERE id=?",userId);return rows.isEmpty()||rows.getFirst().get("avatar")==null?null:((Number)rows.getFirst().get("avatar")).intValue();}
  User user(String authorization,String device){
   if(authorization==null||!authorization.startsWith("Bearer "))throw new Problem(401,"UNAUTHENTICATED","Yenidən daxil olun.");
   String token=authorization.substring(7);var rows=s.db.queryForList("SELECT u.id,u.name,u.phone,u.role,u.pin_length,se.device_id,se.expires_at FROM sessions se JOIN users u ON u.id=se.user_id WHERE token=?",token);
@@ -48,7 +50,7 @@ import static az.kampus.Store.*;
   if(!hash.matches(str(b,"pin"),str(u,"pin_hash"))){failure(id);throw new CredentialFailure("Telefon və ya PIN yanlışdır.");}
   s.db.update("UPDATE users SET failed_attempts=0,locked_until=0 WHERE id=?",id);
   String token=id()+id();s.db.update("INSERT INTO sessions VALUES(?,?,?,?)",token,id,device,System.currentTimeMillis()+("USER".equals(u.get("role"))?300_000:1_800_000));
-  s.audit(id,"LOGIN",m("deviceId",device));return m("accessToken",token,"user",m("id",id,"name",u.get("name"),"phone",phone,"role",u.get("role"),"pinLength",u.get("pin_length")),"expiresIn",300);
+  s.audit(id,"LOGIN",m("deviceId",device));return m("accessToken",token,"user",m("id",id,"name",u.get("name"),"phone",phone,"role",u.get("role"),"pinLength",u.get("pin_length"),"avatar",avatarOf(id)),"expiresIn",300);
  }
  /** Phone-first entry: tells the app whether to ask for a PIN or start registration. */
  Map<String,Object> identify(Map<String,Object>b){String phone=str(b,"phone");Problem.require(phone.matches("\\+994[0-9]{9}"),"INVALID_PHONE","+994 ilə başlayan nömrə yazın.");
@@ -81,6 +83,7 @@ import static az.kampus.Store.*;
   Problem.require(pin.matches("[0-9]{4}")&&!device.isBlank(),"INVALID_IDENTITY","Cihaz və 4 rəqəmli PIN tələb olunur.");
   Problem.require(first.matches(NAME_PATTERN)&&last.matches(NAME_PATTERN),"INVALID_NAME","Ad və soyadı düzgün yazın.");
   String name=first+" "+last;
+  Integer avatar=null;if(b.get("avatar")!=null){Problem.require(b.get("avatar") instanceof Number n&&n.intValue()>=0&&n.intValue()<=7,"INVALID_AVATAR","Avatarı siyahıdan seçin.");avatar=((Number)b.get("avatar")).intValue();}
   Problem.require(yes(b,"termsAccepted")&&yes(b,"dataConsent"),"CONSENT_REQUIRED","Şərtlərə və məlumatların emalına razılıq verin.");
   Problem.require(fin.matches("[A-Z0-9]{7}"),"FIN_REQUIRED","FİN kod 7 hərf və rəqəmdən ibarət olmalıdır.");
   Problem.require(series.matches("AZE[0-9]{8}|AA[0-9]{7}"),"ID_SERIES_REQUIRED","ŞV seriyası AZE12345678 və ya AA1234567 formatında olmalıdır.");
@@ -100,7 +103,7 @@ import static az.kampus.Store.*;
   Problem.require(!birth.isAfter(LocalDate.now().minusYears(18)),"AGE_RESTRICTED","Hesab yalnız 18 yaşdan yuxarı şəxslər üçündür.");
   Problem.require(s.db.queryForObject("SELECT COUNT(*) FROM users WHERE phone=?",Long.class,phone)==0,"PHONE_EXISTS","Bu nömrə artıq qeydiyyatdan keçib.");
   var sima=sim.call("/sima/sign",m("phone",phone,"name",name));
-  String user=id();s.db.update("INSERT INTO users(id,phone,name,pin_hash,role,device_id,birth_date,created_at,pin_length) VALUES(?,?,?,?,?,?,?,?,4)",user,phone,name,hash.encode(pin),"USER",device,birth.toString(),now());l.account("wallet:"+user,"C");o.put("used",true);s.save("OTP",o);
+  String user=id();s.db.update("INSERT INTO users(id,phone,name,pin_hash,role,device_id,birth_date,created_at,pin_length,avatar) VALUES(?,?,?,?,?,?,?,?,4,?)",user,phone,name,hash.encode(pin),"USER",device,birth.toString(),now(),avatar);l.account("wallet:"+user,"C");o.put("used",true);s.save("OTP",o);
   s.add("CONSENT",user,m("type","TERMS_AND_DATA","version","1","acceptedAt",now()));
   String mediaId=media.store(user,"SELFIE","image/jpeg",selfie);
   s.add("KYC",user,tokens.protectedRecord(m("userId",user,"userName",name,"firstName",first,"lastName",last,"phone",phone,"fin",fin,"idSeries",series,"status","DEMO_VERIFIED","provider","MOCK_REGISTRY_SIMA","liveness","CLIENT_REPORTED","livenessProvider",mode,"livenessActions",done,"faceMatchScore",faceScore,"contractId",sima.get("contractId"),"signatureHash",sima.get("signatureHash"),"mediaStored",true,"selfieMediaId",mediaId,"selfieSha256",KycMedia.sha256(selfie),"birthDate",birth.toString())));
