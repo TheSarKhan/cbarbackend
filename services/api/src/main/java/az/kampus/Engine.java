@@ -36,6 +36,27 @@ import static az.kampus.Store.*;
   if(phone.matches("[A-Z0-9]{7}"))return m("channel","ANIPAY","recipientId","ANIPAY_SETTLEMENT","maskedName","Demo alıcı","bankName","Mock Bank","phone",phone,"fin",phone.substring(0,2)+"***"+phone.substring(5));
   throw new Problem(404,"RECIPIENT_NOT_FOUND","Nömrə və ya FİN kod Kampus və AniPay kataloqunda yoxdur.");
  }
+ /**
+  * Closes a student account so the same phone number, FİN and ID series can register again (handy for testing and for a real "delete my data" request).
+  * The demo accounts stay. Money left on the wallet is moved to a closed-accounts balance so the books still add up; ledger history is kept.
+  */
+ Map<String,Object> deleteAccount(Auth.User u,Map<String,Object> b,String proof){
+  Problem.require("USER".equals(u.role()),"NOT_ALLOWED","Yalnız tələbə hesabı silinə bilər.");
+  Problem.require(!u.phone().startsWith("+99450100000"),"DEMO_ACCOUNT","Demo hesabları silmək olmaz.");
+  auth.requireSca(u,proof,"account/delete",b);
+  String uid=u.id(),wallet="wallet:"+uid;
+  Problem.require(l.held(wallet)==0,"PENDING_OPERATION","Gözləyən əməliyyat var. Bir neçə saniyə sonra yenidən sınayın.");
+  long balance=l.balance(wallet);
+  if(balance>0){l.account("CLOSED_ACCOUNT_FUNDS","C");l.post("ACCOUNT_CLOSED","Hesab bağlandı",wallet,"CLOSED_ACCOUNT_FUNDS",balance);}
+  s.audit(uid,"ACCOUNT_DELETED",m("phone",u.phone(),"balanceMinor",balance));
+  s.db.update("DELETE FROM sessions WHERE user_id=?",uid);
+  s.db.update("DELETE FROM payment_tokens WHERE user_id=?",uid);
+  s.db.update("DELETE FROM kyc_media WHERE user_id=?",uid);
+  s.db.update("DELETE FROM idempotency WHERE user_id=?",uid);
+  s.db.update("DELETE FROM records WHERE owner_id=? OR (kind='OTP' AND owner_id=?)",uid,u.phone());
+  s.db.update("DELETE FROM users WHERE id=?",uid);
+  return m("deleted",true);
+ }
  boolean isBlacklisted(String phone){return s.list("BLACKLIST",null).stream().anyMatch(x->phone.equals(str(x,"target")));}
  Map<String,Object> risk(Auth.User u,Map<String,Object>b){long a=amount(b);int score=0;var rules=new ArrayList<String>();String note=str(b,"note").toLowerCase(Locale.forLanguageTag("az")),phone=str(b,"phone");
   if(s.list("BLACKLIST",null).stream().anyMatch(x->phone.equals(str(x,"target")))){score+=100;rules.add("BLACKLIST");}
@@ -69,6 +90,7 @@ import static az.kampus.Store.*;
    l.post("TOPUP","Demo balans artırma","CUSTOMER_FUNDS_BANK","wallet:"+uid,a);notify(uid,"Balans artırıldı",String.format(Locale.ROOT,"%.2f AZN",a/100.0));return tx(uid,"TOPUP","Balans artırma · "+sourceLabel,a,"IN","Daxilolmalar");}
   if(p.equals("topups/terminal-code")){long a=amount(b);Problem.require(l.balance("wallet:"+uid)+a<=200_000,"WALLET_LIMIT","Demo hesabının balans limiti 2 000 AZN-dir.");String code=String.format("%08d",new java.security.SecureRandom().nextInt(100_000_000));return s.add("TERMINAL_CODE",uid,m("code",code,"amountMinor",a,"status","ACTIVE","expiresAt",System.currentTimeMillis()+900_000));}
   if(p.equals("topups/terminal-redeem")){String code=str(b,"code");var tc=s.list("TERMINAL_CODE",uid).stream().filter(x->code.equals(str(x,"code"))).findFirst().orElseThrow(()->new Problem(404,"CODE_NOT_FOUND","Terminal kodu tapılmadı."));Problem.require(str(tc,"status").equals("ACTIVE")&&num(tc,"expiresAt")>System.currentTimeMillis(),"CODE_EXPIRED","Terminal kodunun vaxtı bitib və ya istifadə olunub.");long a=num(tc,"amountMinor");Problem.require(l.balance("wallet:"+uid)+a<=200_000,"WALLET_LIMIT","Demo hesabının balans limiti 2 000 AZN-dir.");sim.call("/bank/topup",m("amountMinor",a,"source","TERMINAL","terminalCode",code));l.post("TOPUP","Terminal kodu ilə balans artırma","CUSTOMER_FUNDS_BANK","wallet:"+uid,a);tc.put("status","USED");s.save("TERMINAL_CODE",tc);notify(uid,"Terminal ödənişi qəbul edildi",String.format(Locale.ROOT,"%.2f AZN · Kod %s",a/100.0,code));return tx(uid,"TOPUP","Terminal · "+code,a,"IN","Daxilolmalar");}
+  if(p.equals("account/delete"))return deleteAccount(u,b,proof);
   if(p.equals("trusted-beneficiaries")){var to=resolve(str(b,"phone"));Problem.require(!uid.equals(to.get("recipientId")),"SELF_TRANSFER","Özünüzü əlavə edə bilməzsiniz.");auth.requireSca(u,proof,p,b);for(var old:s.list("TRUSTED_BENEFICIARY",uid))if(str(b,"phone").equals(str(old,"phone")))return old;return s.add("TRUSTED_BENEFICIARY",uid,m("phone",b.get("phone"),"recipientId",to.get("recipientId"),"maskedName",to.get("maskedName"),"channel",to.get("channel"),"nickname",str(b,"nickname").isBlank()?to.get("maskedName"):str(b,"nickname"),"avatar",to.get("avatar")));}
   if(p.matches("trusted-beneficiaries/[^/]+/delete")){var tb=s.own("TRUSTED_BENEFICIARY",parts[1],uid);s.db.update("DELETE FROM records WHERE kind='TRUSTED_BENEFICIARY' AND id=?",tb.get("id"));return m("deleted",true,"id",tb.get("id"));}
   if(p.equals("contacts/match")){

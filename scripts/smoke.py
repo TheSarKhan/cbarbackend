@@ -577,6 +577,29 @@ class Checks(unittest.TestCase):
         seeded=next(k for k in records if k['userId']=='u1')
         self.assertTrue(seeded['finToken'].startswith('tok_fin_'))
         self.assertIn('•',seeded['finMasked']);self.assertNotIn('7AZ1234',json.dumps(records))
+    def test_35_delete_account_and_register_again(self):
+        import base64
+        selfie='data:image/jpeg;base64,'+base64.b64encode((pathlib.Path(__file__).resolve().parent/'fixtures'/'selfie.jpg').read_bytes()).decode()
+        phone='+994509998855'
+        def register():
+            otp=self.a.send('auth/otp',{'phone':phone})
+            self.a.send('auth/otp/verify',{'otpId':otp['otpId'],'otp':otp['demoCode']})
+            return self.a.send('auth/register',{'otpId':otp['otpId'],'otp':otp['demoCode'],'name':'Samir','surname':'Rzayev','birthDate':'2001-02-03','pin':'4821','deviceId':'demo-device','termsAccepted':True,'dataConsent':True,'fin':'7AZ6677','idSeries':'AZE87654321','facesCount':1,'simaSigned':True,'livenessMode':'MEDIAPIPE_WEB','livenessActions':otp['livenessActions'],'selfie':selfie,'avatar':1})
+        first=register()
+        me=Client(phone,pin='4821')
+        proof=lambda c:c.send('auth/sca',{'pin':'4821','payload':{'action':'account/delete','data':{}}})['proof']
+        before=self.admin.send('admin/reconciliation/run',{})['differenceMinor']
+        me.send('topups',{'amountMinor':1000,'source':'CARD'})
+        # the demo accounts and the wrong PIN cannot delete anything
+        self.a.send('account/delete',{},proof=self.a.sca('account/delete',{}),status=422)
+        me.send('account/delete',{},status=403)
+        self.assertEqual(me.send('account/delete',{},proof=proof(me))['deleted'],True)
+        self.a.send('auth/login',{'phone':phone,'pin':'4821','deviceId':'demo-device'},status=(401,404,422))
+        # the same phone, FIN and ID series register again; the books still balance
+        second=register()
+        self.assertNotEqual(first['user']['id'],second['user']['id'])
+        self.assertEqual(self.admin.send('admin/reconciliation/run',{})['differenceMinor'],before)
+        again=Client(phone,pin='4821');again.send('account/delete',{},proof=proof(again))
     def test_34_spending_analytics(self):
         view=self.a.send('analytics/insights')
         self.assertTrue(view['enabled'])
