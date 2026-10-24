@@ -64,7 +64,7 @@ import static az.kampus.Store.*;
    if(attempts>=5)throw new Problem(429,"OTP_LOCKED","Çox sayda yanlış cəhd. Yeni kod istəyin.");
    throw new Problem(422,"INVALID_OTP","SMS kodu yanlışdır.");
   }
-  o.put("verified",true);s.save("OTP",o);
+  o.put("verified",true);o.put("registerUntil",System.currentTimeMillis()+1_800_000);s.save("OTP",o);
   return m("verified",true);
  }
  @Transactional Map<String,Object> otp(Map<String,Object>b){s.lock();String phone=str(b,"phone");Problem.require(phone.matches("\\+994[0-9]{9}"),"INVALID_PHONE","+994 ilə başlayan nömrə yazın.");
@@ -76,7 +76,7 @@ import static az.kampus.Store.*;
  }
  static final String NAME_PATTERN="[\\p{L}][\\p{L} '\\-]{1,59}";
  @Transactional Map<String,Object> register(Map<String,Object>b){s.lock();var o=s.get("OTP",str(b,"otpId"));
-  Problem.require(!yes(o,"used")&&yes(o,"verified")&&num(o,"expiresAt")>System.currentTimeMillis()&&str(o,"code").equals(str(b,"otp")),"INVALID_OTP","SMS kodu təsdiqlənməyib və ya vaxtı bitib.");
+  Problem.require(!yes(o,"used")&&yes(o,"verified")&&Math.max(num(o,"expiresAt"),o.containsKey("registerUntil")?num(o,"registerUntil"):0L)>System.currentTimeMillis()&&str(o,"code").equals(str(b,"otp")),"INVALID_OTP","SMS kodu təsdiqlənməyib və ya vaxtı bitib. Yeni kod alın.");
   String pin=str(b,"pin"),first=str(b,"name").trim(),last=str(b,"surname").trim(),phone=str(o,"phone"),device=str(b,"deviceId"),fin=str(b,"fin").trim().toUpperCase(Locale.ROOT),series=str(b,"idSeries").replace(" ","").toUpperCase(Locale.ROOT),mode=str(b,"livenessMode");
   Problem.require(pin.matches("[0-9]{4}")&&!device.isBlank(),"INVALID_IDENTITY","Cihaz və 4 rəqəmli PIN tələb olunur.");
   Problem.require(first.matches(NAME_PATTERN)&&last.matches(NAME_PATTERN),"INVALID_NAME","Ad və soyadı düzgün yazın.");
