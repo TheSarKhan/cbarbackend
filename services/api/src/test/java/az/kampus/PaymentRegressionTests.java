@@ -17,6 +17,7 @@ class PaymentRegressionTests {
  Auth.User user(){return new Auth.User("u1","Aytən Məmmədova","+994501000001","USER","demo-device",6);}
  @Test void knownTokenizedFinResolvesToTheSameWalletAsPhone(){
   var phone=engine.resolve("+994501000002");var fin=engine.resolve("7MR2345");
+  var publicResolution=(Map<String,Object>)engine.read(user(),"transfers/resolve","7MR2345");assertFalse(publicResolution.containsKey("recipientPhone"));
   assertEquals(phone.get("recipientId"),fin.get("recipientId"));assertEquals("INTERNAL",fin.get("channel"));assertEquals("Murad Əliyev",fin.get("maskedName"));
  }
  @Test void finTransferCreditsRecipientExactlyOnceAndReconciles(){
@@ -24,7 +25,9 @@ class PaymentRegressionTests {
   var body=m("phone","7MR2345","amountMinor",1000,"recipientToken",tokens.issue("u1","P2P_RECIPIENT",m("phone","7MR2345"),300));
   var transfer=(Map<String,Object>)engine.write(user(),"transfers",body,"regression-fin-transfer",null);
   assertEquals(before-1000,ledger.available("wallet:u1"));assertEquals(other,ledger.available("wallet:u2"));
-  transfer.put("executeAt",0L);s.save("TRANSFER",transfer);engine.processTransfers();engine.processTransfers();
+  assertFalse(transfer.containsKey("recipientPhone"));
+  assertFalse(((Map<?,?>)engine.read(user(),"transfers/"+str(transfer,"id"),"")).containsKey("recipientPhone"));
+  var stored=s.get("TRANSFER",str(transfer,"id"));stored.put("executeAt",0L);s.save("TRANSFER",stored);engine.processTransfers();engine.processTransfers();
   assertEquals("COMPLETED",s.get("TRANSFER",str(transfer,"id")).get("status"));
   assertEquals(before-1000,ledger.available("wallet:u1"));assertEquals(other+1000,ledger.available("wallet:u2"));assertEquals(0,num(ledger.reconcile(),"differenceMinor"));
  }
