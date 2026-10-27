@@ -233,7 +233,7 @@ import static az.kampus.Store.*;
   if(p.startsWith("open-banking/"))return openBanking.read(u,p);
   return switch(p){
    case "wallet" -> l.wallet(uid);
-   case "dashboard" -> m("user",auth.publicUser(u),"wallet",l.wallet(uid),"transactions",customerTransactions(uid),"transfers",s.list("TRANSFER",uid).stream().map(this::publicTransfer).toList(),"trustedBeneficiaries",s.list("TRUSTED_BENEFICIARY",uid),"terminalCodes",s.list("TERMINAL_CODE",uid),"notifications",s.list("NOTIFICATION",uid),"requests",s.list("REQUEST",uid),"bnplLoans",s.list("BNPL",uid),"partnerLoans",s.list("PARTNER_LOAN",uid),"applications",s.list("APPLICATION",uid),"offers",s.list("OFFER",uid),"cryptoEnabled",cryptoEnabled(),"cryptoDeposits",s.list("CRYPTO_DEPOSIT",uid),"cryptoWithdrawals",s.list("CRYPTO_WITHDRAWAL",uid),"bnplEligibility",creditPolicy.eligibility(uid),"bnplAvailableMinor",creditPolicy.eligibility(uid).get("availableMinor"),"analytics",analytics(uid),"insightsBrief",insights.brief(uid),"openBanking",openBanking.overview(uid),"budgets",s.list("BUDGET",uid),"splits",s.list("SPLIT",uid),"cardTransfers",s.list("CARD_TRANSFER",uid).stream().map(cardTransfers::publicTransfer).toList(),"recipientCards",cardTransfers.read(u,"recipient-cards"));
+   case "dashboard" -> m("user",auth.publicUser(u),"wallet",l.wallet(uid),"transactions",customerTransactions(uid),"transfers",publicTransfers(uid),"trustedBeneficiaries",s.list("TRUSTED_BENEFICIARY",uid),"terminalCodes",s.list("TERMINAL_CODE",uid),"notifications",s.list("NOTIFICATION",uid),"requests",s.list("REQUEST",uid),"bnplLoans",s.list("BNPL",uid),"partnerLoans",s.list("PARTNER_LOAN",uid),"applications",s.list("APPLICATION",uid),"offers",s.list("OFFER",uid),"cryptoEnabled",cryptoEnabled(),"cryptoDeposits",s.list("CRYPTO_DEPOSIT",uid),"cryptoWithdrawals",s.list("CRYPTO_WITHDRAWAL",uid),"bnplEligibility",creditPolicy.eligibility(uid),"bnplAvailableMinor",creditPolicy.eligibility(uid).get("availableMinor"),"analytics",analytics(uid),"insightsBrief",insights.brief(uid),"openBanking",openBanking.overview(uid),"budgets",s.list("BUDGET",uid),"splits",s.list("SPLIT",uid),"cardTransfers",s.list("CARD_TRANSFER",uid).stream().map(cardTransfers::publicTransfer).toList(),"recipientCards",cardTransfers.read(u,"recipient-cards"));
    case "transactions" -> customerTransactions(uid);
    case "trusted-beneficiaries" -> s.list("TRUSTED_BENEFICIARY",uid);
    case "notifications" -> s.list("NOTIFICATION",uid);
@@ -251,7 +251,25 @@ import static az.kampus.Store.*;
   };
  }
  Map<String,Object> fraudMetrics(){long totalTx=Math.max(1,s.list("TX",null).size()),fraudCount=s.list("FRAUD",null).size();return m("traFraudRate",null,"calculationStatus","NOT_IMPLEMENTED","traActive",false,"openCases",s.list("FRAUD",null).stream().filter(x->"OPEN".equals(str(x,"status"))).count(),"totalCases",fraudCount,"monitoredTxCount",totalTx);}
- Map<String,Object> publicTransfer(Map<String,Object> transfer){var safe=new LinkedHashMap<>(transfer);safe.remove("recipientPhone");return safe;}
+ Map<String,Object> transferView(Map<String,Object> transfer,Integer avatar){
+  var safe=new LinkedHashMap<>(transfer);safe.remove("recipientPhone");
+  if("INTERNAL".equals(str(transfer,"channel"))){if(avatar==null)safe.remove("avatar");else safe.put("avatar",avatar);}
+  return safe;
+ }
+ Map<String,Object> publicTransfer(Map<String,Object> transfer){
+  String id=str(transfer,"recipientId");Integer avatar="INTERNAL".equals(str(transfer,"channel"))&&!id.isBlank()?auth.avatarOf(id):null;
+  return transferView(transfer,avatar);
+ }
+ List<Map<String,Object>> publicTransfers(String uid){
+  var transfers=s.list("TRANSFER",uid);
+  var ids=transfers.stream().filter(t->"INTERNAL".equals(str(t,"channel"))).map(t->str(t,"recipientId")).filter(id->!id.isBlank()).distinct().toList();
+  var avatars=new HashMap<String,Integer>();
+  if(!ids.isEmpty()){
+   String placeholders=String.join(",",Collections.nCopies(ids.size(),"?"));
+   for(var row:s.db.queryForList("SELECT id,avatar FROM users WHERE id IN ("+placeholders+")",ids.toArray()))if(row.get("avatar")!=null)avatars.put(row.get("id").toString(),((Number)row.get("avatar")).intValue());
+  }
+  return transfers.stream().map(t->transferView(t,avatars.get(str(t,"recipientId")))).toList();
+ }
  List<Map<String,Object>> customerTransactions(String uid){return s.list("TX",uid).stream().filter(t->!yes(t,"demoHistory")).toList();}
  Map<String,Object> analytics(String uid){
   var totals=new LinkedHashMap<String,Long>();var now=Instant.now();var month=YearMonth.from(now.atZone(Insights.LOCAL));long external=0;
