@@ -21,11 +21,13 @@ class PaymentRegressionTests {
   assertEquals(phone.get("recipientId"),fin.get("recipientId"));assertEquals("INTERNAL",fin.get("channel"));assertEquals("Murad Əliyev",fin.get("maskedName"));
  }
  @Test void finTransferCreditsRecipientExactlyOnceAndReconciles(){
+  s.db.update("UPDATE users SET avatar=3 WHERE id='u2'");
   long before=ledger.available("wallet:u1"),other=ledger.available("wallet:u2");
   var body=m("phone","7MR2345","amountMinor",1000,"recipientToken",tokens.issue("u1","P2P_RECIPIENT",m("phone","7MR2345"),300));
   var transfer=(Map<String,Object>)engine.write(user(),"transfers",body,"regression-fin-transfer",null);
   assertEquals(before-1000,ledger.available("wallet:u1"));assertEquals(other,ledger.available("wallet:u2"));
-  assertFalse(transfer.containsKey("recipientPhone"));
+  assertFalse(transfer.containsKey("recipientPhone"));assertEquals(3,transfer.get("avatar"));
+  assertEquals(3,engine.publicTransfers("u1").stream().filter(t->str(t,"id").equals(str(transfer,"id"))).findFirst().orElseThrow().get("avatar"));
   assertFalse(((Map<?,?>)engine.read(user(),"transfers/"+str(transfer,"id"),"")).containsKey("recipientPhone"));
   var stored=s.get("TRANSFER",str(transfer,"id"));stored.put("executeAt",0L);s.save("TRANSFER",stored);engine.processTransfers();engine.processTransfers();
   assertEquals("COMPLETED",s.get("TRANSFER",str(transfer,"id")).get("status"));
