@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @SpringBootTest(properties={"spring.datasource.url=jdbc:h2:mem:payment_regressions;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1","kampus.debt-delay-ms=3600000","kampus.insights-scan-initial-ms=3600000"},webEnvironment=SpringBootTest.WebEnvironment.NONE)
 @Transactional
 class PaymentRegressionTests {
- @Autowired Engine engine;@Autowired Store s;@Autowired Ledger ledger;@Autowired Tokens tokens;@Autowired InsightsService insights;
+ @Autowired Engine engine;@Autowired Store s;@Autowired Ledger ledger;@Autowired OpenBanking openBanking;@Autowired Tokens tokens;@Autowired InsightsService insights;
  @MockitoBean Simulator simulator;
  Auth.User user(){return new Auth.User("u1","Aytən Məmmədova","+994501000001","USER","demo-device",6);}
  @Test void knownTokenizedFinResolvesToTheSameWalletAsPhone(){
@@ -48,6 +48,13 @@ class PaymentRegressionTests {
   assertEquals(0,num(engine.analytics("u1"),"totalMinor"));
   var view=insights.view(user(),null);assertEquals(0,num(view,"spendingCount"));assertTrue(((List<?>)view.get("anomalies")).isEmpty());
   assertEquals(0,num(insights.brief("u1"),"openAnomalies"));
+ }
+ @Test void generatedHistoryCannotTriggerOrSuppressRealBudgetWarnings(){
+  s.add("BUDGET","u1",m("category","Yemək","limitMinor",1000));
+  assertEquals(0,openBanking.monthSpend("u1",java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString().substring(0,7)).getOrDefault("Yemək",0L));
+  engine.tx("u1","QR","Café",850,"OUT","Yemək");
+  assertTrue(s.list("NOTIFICATION","u1").stream().anyMatch(n->str(n,"title").contains("80%")));
+  assertEquals(850,openBanking.monthSpend("u1",java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString().substring(0,7)).getOrDefault("Yemək",0L));
  }
  @Test void analyticsTotalsMatchActualCompletedPaymentsOnly(){
   engine.tx("u1","QR","Café",1500,"OUT","Yemək");

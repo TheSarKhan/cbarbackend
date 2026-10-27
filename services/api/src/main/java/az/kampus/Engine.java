@@ -16,7 +16,7 @@ import static az.kampus.Store.*;
  void notify(String user,String title,String body){s.add("NOTIFICATION",user,m("title",title,"body",body,"read",false));}
  Map<String,Object> tx(String owner,String type,String name,long amount,String direction,String category){
   String month=LocalDate.now(ZoneOffset.UTC).toString().substring(0,7);
-  long before=direction.equals("OUT")?s.list("TX",owner).stream().filter(x->str(x,"direction").equals("OUT")&&str(x,"createdAt").startsWith(month)&&category.equals(str(x,"category"))).mapToLong(x->num(x,"amountMinor")).sum():0;
+  long before=direction.equals("OUT")?s.list("TX",owner).stream().filter(x->!yes(x,"demoHistory")&&str(x,"status").equals("COMPLETED")&&str(x,"direction").equals("OUT")&&str(x,"createdAt").startsWith(month)&&category.equals(str(x,"category"))).mapToLong(x->num(x,"amountMinor")).sum():0;
   var row=s.add("TX",owner,m("type",type,"name",name,"amountMinor",amount,"direction",direction,"category",category,"status","COMPLETED"));
   if(direction.equals("OUT")){
    for(var bud:s.list("BUDGET",owner))if(category.equals(str(bud,"category"))){

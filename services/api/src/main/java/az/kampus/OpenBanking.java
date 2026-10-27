@@ -237,7 +237,7 @@ public class OpenBanking {
     /** Spend per category this month across Kampus and linked banks; budgets alert on the combined figure. */
     Map<String,Long> monthSpend(String uid,String month){
         var totals=new HashMap<String,Long>();
-        for(var t:s.list("TX",uid))if("OUT".equals(str(t,"direction"))&&str(t,"createdAt").startsWith(month))totals.merge(str(t,"category"),num(t,"amountMinor"),Long::sum);
+        for(var t:s.list("TX",uid))if(!yes(t,"demoHistory")&&"COMPLETED".equals(str(t,"status"))&&"OUT".equals(str(t,"direction"))&&str(t,"createdAt").startsWith(month))totals.merge(str(t,"category"),num(t,"amountMinor"),Long::sum);
         for(var t:s.list("OB_TX",uid))if("OUT".equals(str(t,"direction"))&&!INTERNAL.equals(str(t,"category"))&&str(t,"createdAt").startsWith(month))totals.merge(str(t,"category"),num(t,"amountMinor"),Long::sum);
         return totals;
     }
