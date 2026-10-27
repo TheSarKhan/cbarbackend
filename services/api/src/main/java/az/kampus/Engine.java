@@ -29,8 +29,17 @@ import static az.kampus.Store.*;
  }
  void payout(String debit,long amount){l.post("SETTLEMENT","Demo bank hesablaşması",debit,"CUSTOMER_FUNDS_BANK",amount);}
  Map<String,Object> resolve(String phone){
+  phone=phone.trim().toUpperCase(Locale.ROOT);
+  if(phone.matches("[A-Z0-9]{7}")){
+   final String fin=phone;
+   var matches=s.list("KYC",null).stream().filter(k->tokens.has(k,"fin","fin",fin)).toList();
+   for(var k:matches){
+    var people=s.db.queryForList("SELECT id,name,phone,avatar FROM users WHERE id=? AND role='USER'",str(k,"userId"));
+    if(!people.isEmpty()){var person=people.getFirst();return m("channel","INTERNAL","recipientId",person.get("id"),"maskedName",person.get("name"),"phone",phone,"avatar",person.get("avatar"),"identifierType","FIN","recipientPhone",person.get("phone"));}
+   }
+  }
   var u=s.db.queryForList("SELECT id,name,avatar FROM users WHERE phone=? AND role='USER'",phone);
-  if(!u.isEmpty()){var r=u.getFirst();return m("channel","INTERNAL","recipientId",r.get("id"),"maskedName",r.get("name"),"phone",phone,"avatar",r.get("avatar"));}
+  if(!u.isEmpty()){var r=u.getFirst();return m("channel","INTERNAL","recipientId",r.get("id"),"maskedName",r.get("name"),"phone",phone,"avatar",r.get("avatar"),"recipientPhone",phone);}
   if(phone.matches("\\+99455[0-9]{7}"))return m("channel","ANIPAY","recipientId","ANIPAY_SETTLEMENT","maskedName","Demo alıcı","bankName","Mock Bank","phone",phone);
   // AniPay also accepts the recipient's FIN code; the identifier travels in the same "phone" field so tokens, risk rules and trusted beneficiaries work unchanged
   if(phone.matches("[A-Z0-9]{7}"))return m("channel","ANIPAY","recipientId","ANIPAY_SETTLEMENT","maskedName","Demo alıcı","bankName","Mock Bank","phone",phone,"fin",phone.substring(0,2)+"***"+phone.substring(5));
@@ -111,7 +120,7 @@ import static az.kampus.Store.*;
    long a=amount(b);Problem.require(a<=100_000,"TRANSFER_LIMIT","Bir köçürmə maksimum 1 000 AZN-dir.");var to=resolve(str(b,"phone"));Problem.require(!uid.equals(to.get("recipientId")),"SELF_TRANSFER","Özünüzə göndərə bilməzsiniz.");
    long daily=s.list("TRANSFER",uid).stream().filter(t->str(t,"createdAt").startsWith(LocalDate.now(ZoneOffset.UTC).toString())&&!Set.of("CANCELLED","REJECTED").contains(str(t,"status"))).mapToLong(t->num(t,"amountMinor")).sum();Problem.require(daily+a<=200_000,"DAILY_LIMIT","Gündəlik köçürmə limiti aşılıb.");
    boolean trusted=s.list("TRUSTED_BENEFICIARY",uid).stream().anyMatch(x->str(b,"phone").equals(str(x,"phone")));
-   var risk=risk(u,b);if(str(risk,"action").equals("BLOCK"))throw new Problem(403,"BLACKLISTED_RECIPIENT","Bu alana köçürmə bloklanıb.");boolean review=num(risk,"score")>=80;
+   var riskBody=new LinkedHashMap<String,Object>(b);riskBody.put("phone",to.getOrDefault("recipientPhone",str(b,"phone")));var risk=risk(u,riskBody);if(str(risk,"action").equals("BLOCK"))throw new Problem(403,"BLACKLISTED_RECIPIENT","Bu alana köçürmə bloklanıb.");boolean review=num(risk,"score")>=80;
    // Large amounts are confirmed by the customer (PIN and face check) even when the risk score sends them to manual review afterwards.
     boolean fromCard=!str(b,"fundingAccountId").isBlank();
     if(fromCard||a>=auth.kycLimit()||(!review&&!(trusted&&num(risk,"score")<30)))scaIf(u,proof,p,b,fromCard||a>6000||a>=auth.kycLimit()||num(risk,"score")>=30);
@@ -119,7 +128,7 @@ import static az.kampus.Store.*;
    tokens.consume(uid,str(b,"recipientToken"),"P2P_RECIPIENT",m("phone",str(b,"phone")));
    String fundedBy="";Map<String,Object> charge=m();
    if(fromCard){charge=openBanking.charge(uid,str(b,"fundingAccountId"),a,"Köçürmə");fundedBy=str(charge,"cardLabel");l.post("BANK_CARD_FUNDING","Bank kartından maliyyələşmə","CUSTOMER_FUNDS_BANK","wallet:"+uid,a);}
-   String hold=l.hold("wallet:"+uid,a);var t=s.add("TRANSFER",uid,m("senderId",uid,"recipientId",to.get("recipientId"),"recipientName",to.get("maskedName"),"channel",to.get("channel"),"phone",b.get("phone"),"amountMinor",a,"note",str(b,"note"),"trustedBeneficiary",trusted,"fundedBy",fundedBy,"cardChargeId",charge.getOrDefault("chargeId",""),"cardConsentRef",charge.getOrDefault("simConsentId",""),"cardAccountId",charge.getOrDefault("accountId",""),"status",review?"UNDER_REVIEW":"SCHEDULED","holdId",hold,"executeAt",System.currentTimeMillis()+5000,"risk",risk));
+   String hold=l.hold("wallet:"+uid,a);var t=s.add("TRANSFER",uid,m("senderId",uid,"recipientId",to.get("recipientId"),"recipientName",to.get("maskedName"),"channel",to.get("channel"),"phone",b.get("phone"),"recipientPhone",to.getOrDefault("recipientPhone",str(b,"phone")),"amountMinor",a,"note",str(b,"note"),"trustedBeneficiary",trusted,"fundedBy",fundedBy,"cardChargeId",charge.getOrDefault("chargeId",""),"cardConsentRef",charge.getOrDefault("simConsentId",""),"cardAccountId",charge.getOrDefault("accountId",""),"status",review?"UNDER_REVIEW":"SCHEDULED","holdId",hold,"executeAt",System.currentTimeMillis()+5000,"risk",risk));
    if(review)s.add("FRAUD","SYSTEM",m("userId",uid,"transferId",t.get("id"),"amountMinor",a,"recipientName",to.get("maskedName"),"score",risk.get("score"),"rules",risk.get("rules"),"status","OPEN","expiresAt",System.currentTimeMillis()+1_800_000));
    return t;
   }
@@ -224,8 +233,8 @@ import static az.kampus.Store.*;
   if(p.startsWith("open-banking/"))return openBanking.read(u,p);
   return switch(p){
    case "wallet" -> l.wallet(uid);
-   case "dashboard" -> m("user",auth.publicUser(u),"wallet",l.wallet(uid),"transactions",s.list("TX",uid),"transfers",s.list("TRANSFER",uid),"trustedBeneficiaries",s.list("TRUSTED_BENEFICIARY",uid),"terminalCodes",s.list("TERMINAL_CODE",uid),"notifications",s.list("NOTIFICATION",uid),"requests",s.list("REQUEST",uid),"bnplLoans",s.list("BNPL",uid),"partnerLoans",s.list("PARTNER_LOAN",uid),"applications",s.list("APPLICATION",uid),"offers",s.list("OFFER",uid),"cryptoEnabled",cryptoEnabled(),"cryptoDeposits",s.list("CRYPTO_DEPOSIT",uid),"cryptoWithdrawals",s.list("CRYPTO_WITHDRAWAL",uid),"bnplEligibility",creditPolicy.eligibility(uid),"bnplAvailableMinor",creditPolicy.eligibility(uid).get("availableMinor"),"analytics",analytics(uid),"insightsBrief",insights.brief(uid),"openBanking",openBanking.overview(uid),"budgets",s.list("BUDGET",uid),"splits",s.list("SPLIT",uid),"cardTransfers",s.list("CARD_TRANSFER",uid).stream().map(cardTransfers::publicTransfer).toList(),"recipientCards",cardTransfers.read(u,"recipient-cards"));
-   case "transactions" -> s.list("TX",uid);
+   case "dashboard" -> m("user",auth.publicUser(u),"wallet",l.wallet(uid),"transactions",customerTransactions(uid),"transfers",s.list("TRANSFER",uid),"trustedBeneficiaries",s.list("TRUSTED_BENEFICIARY",uid),"terminalCodes",s.list("TERMINAL_CODE",uid),"notifications",s.list("NOTIFICATION",uid),"requests",s.list("REQUEST",uid),"bnplLoans",s.list("BNPL",uid),"partnerLoans",s.list("PARTNER_LOAN",uid),"applications",s.list("APPLICATION",uid),"offers",s.list("OFFER",uid),"cryptoEnabled",cryptoEnabled(),"cryptoDeposits",s.list("CRYPTO_DEPOSIT",uid),"cryptoWithdrawals",s.list("CRYPTO_WITHDRAWAL",uid),"bnplEligibility",creditPolicy.eligibility(uid),"bnplAvailableMinor",creditPolicy.eligibility(uid).get("availableMinor"),"analytics",analytics(uid),"insightsBrief",insights.brief(uid),"openBanking",openBanking.overview(uid),"budgets",s.list("BUDGET",uid),"splits",s.list("SPLIT",uid),"cardTransfers",s.list("CARD_TRANSFER",uid).stream().map(cardTransfers::publicTransfer).toList(),"recipientCards",cardTransfers.read(u,"recipient-cards"));
+   case "transactions" -> customerTransactions(uid);
    case "trusted-beneficiaries" -> s.list("TRUSTED_BENEFICIARY",uid);
    case "notifications" -> s.list("NOTIFICATION",uid);
    case "transfers/resolve" -> {var r=new LinkedHashMap<>(resolve(query));r.put("recipientToken",tokens.issue(uid,"P2P_RECIPIENT",m("phone",query),300));yield r;}
@@ -242,7 +251,15 @@ import static az.kampus.Store.*;
   };
  }
  Map<String,Object> fraudMetrics(){long totalTx=Math.max(1,s.list("TX",null).size()),fraudCount=s.list("FRAUD",null).size();return m("traFraudRate",null,"calculationStatus","NOT_IMPLEMENTED","traActive",false,"openCases",s.list("FRAUD",null).stream().filter(x->"OPEN".equals(str(x,"status"))).count(),"totalCases",fraudCount,"monitoredTxCount",totalTx);}
- Map<String,Object> analytics(String uid){var totals=new LinkedHashMap<String,Long>();String month=LocalDate.now(ZoneOffset.UTC).toString().substring(0,7);for(var t:s.list("TX",uid))if(str(t,"direction").equals("OUT")&&str(t,"createdAt").startsWith(month))totals.merge(str(t,"category"),num(t,"amountMinor"),Long::sum);long external=0;for(var t:s.list("OB_TX",uid))if(str(t,"direction").equals("OUT")&&!OpenBanking.INTERNAL.equals(str(t,"category"))&&str(t,"createdAt").startsWith(month)){totals.merge(str(t,"category"),num(t,"amountMinor"),Long::sum);external+=num(t,"amountMinor");}return m("month",month,"externalMinor",external,"totalMinor",totals.values().stream().mapToLong(Long::longValue).sum(),"categories",totals.entrySet().stream().map(e->m("category",e.getKey(),"amountMinor",e.getValue())).toList());}
+ List<Map<String,Object>> customerTransactions(String uid){return s.list("TX",uid).stream().filter(t->!yes(t,"demoHistory")).toList();}
+ Map<String,Object> analytics(String uid){
+  var totals=new LinkedHashMap<String,Long>();var now=Instant.now();var month=YearMonth.from(now.atZone(Insights.LOCAL));long external=0;
+  for(var spend:Insights.spending(customerTransactions(uid),s.list("OB_TX",uid)))if(YearMonth.from(spend.at().atZone(Insights.LOCAL)).equals(month)){
+   totals.merge(spend.category(),spend.amount(),Long::sum);if(spend.source().equals("BANK"))external+=spend.amount();
+  }
+  return m("month",month.toString(),"externalMinor",external,"totalMinor",totals.values().stream().mapToLong(Long::longValue).sum(),"categories",totals.entrySet().stream().map(e->m("category",e.getKey(),"amountMinor",e.getValue())).toList());
+ }
+
  /** A transfer paid from a bank card that does not reach the recipient is returned to that card, not left in the wallet. */
  void returnToCard(Map<String,Object> t){
   if(str(t,"cardChargeId").isBlank()||yes(t,"returnedToCard"))return;
@@ -255,7 +272,7 @@ import static az.kampus.Store.*;
  @Scheduled(fixedDelayString="${kampus.ob-sync-ms:300000}",initialDelayString="${kampus.ob-sync-initial-ms:90000}") @Transactional public void syncOpenBanking(){s.lock();openBanking.syncAll(this::notify);}
  @Scheduled(fixedDelayString="${kampus.insights-scan-ms:120000}",initialDelayString="${kampus.insights-scan-initial-ms:60000}") @Transactional public void scanInsights(){s.lock();insights.scan(this::notify);}
  @Scheduled(fixedDelay=400) @Transactional public void processTransfers(){s.lock();for(var t:s.list("TRANSFER",null)){if(str(t,"status").equals("SCHEDULED")&&num(t,"executeAt")<=System.currentTimeMillis()){
-   if(isBlacklisted(str(t,"phone"))){l.release(str(t,"holdId"));returnToCard(t);t.put("status","REJECTED");s.save("TRANSFER",t);notify(str(t,"senderId"),"Köçürmə bloklandı","Alan qara siyahıya əlavə edilib. Rezerv açıldı.");continue;}
+   if(isBlacklisted(str(t,"phone"))||isBlacklisted(str(t,"recipientPhone"))){l.release(str(t,"holdId"));returnToCard(t);t.put("status","REJECTED");s.save("TRANSFER",t);notify(str(t,"senderId"),"Köçürmə bloklandı","Alan qara siyahıya əlavə edilib. Rezerv açıldı.");continue;}
    String sender=str(t,"senderId"),to=str(t,"recipientId");long a=num(t,"amountMinor");boolean external=str(t,"channel").equals("ANIPAY");boolean ok=true;
    if(external){try{sim.call("/anipay/transfers",m("transferId",t.get("id"),"amountMinor",a));}catch(Problem e){ok=false;}}
    l.release(str(t,"holdId"));if(!ok)returnToCard(t);if(ok){l.post("P2P","Köçürmə","wallet:"+sender,external?"ANIPAY_SETTLEMENT":"wallet:"+to,a);if(external)payout("ANIPAY_SETTLEMENT",a);tx(sender,"P2P",str(t,"recipientName"),a,"OUT","Köçürmələr");if(!external){tx(to,"P2P",s.db.queryForObject("SELECT name FROM users WHERE id=?",String.class,sender),a,"IN","Daxilolmalar");notify(to,"Pul gəldi","Kampus köçürməsi balansınıza əlavə edildi.");}}

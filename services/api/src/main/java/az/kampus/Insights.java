@@ -40,7 +40,7 @@ final class Insights {
   return out;
  }
  private static void add(List<Spend> out,Map<String,Object> t,String source){
-  if(!"OUT".equals(str(t,"direction"))||INTERNAL.equals(str(t,"category")))return;
+  if(yes(t,"demoHistory")||Set.of("FAILED","REJECTED","CANCELLED","PENDING").contains(str(t,"status"))||!"OUT".equals(str(t,"direction"))||INTERNAL.equals(str(t,"category")))return;
   long amount;Instant at;
   try{amount=num(t,"amountMinor");at=Instant.parse(str(t,"createdAt"));}catch(RuntimeException e){return;}
   if(amount<=0)return;
