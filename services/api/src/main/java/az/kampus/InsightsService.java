@@ -37,8 +37,9 @@ public class InsightsService {
    if(notifier!=null)notifier.send(uid,"Qeyri-adi ödəniş",a.explanation()+" Bunlar sənsən? Analitika ekranında cavab ver.");
    s.audit(uid,"ANOMALY_DETECTED",m("anomalyId",record.get("id"),"reason",a.reason(),"score",a.score()));
   }
+  var actualIds=run.spends().stream().map(Insights.Spend::id).collect(Collectors.toSet());
   Instant since=run.now().minus(Duration.ofDays(30));
-  return s.list("ANOMALY",uid).stream().filter(a->"OPEN".equals(str(a,"status"))&&Instant.parse(str(a,"at")).isAfter(since))
+  return s.list("ANOMALY",uid).stream().filter(a->actualIds.contains(str(a,"txId"))&&"OPEN".equals(str(a,"status"))&&Instant.parse(str(a,"at")).isAfter(since))
    .sorted(Comparator.comparing((Map<String,Object> a)->str(a,"at")).reversed()).toList();
  }
 
@@ -63,7 +64,7 @@ public class InsightsService {
   var openViews=open.stream().map(a->m("id",a.get("id"),"txId",a.get("txId"),"merchant",a.get("merchant"),"category",a.get("category"),"amountMinor",a.get("amountMinor"),
    "reason",a.get("reason"),"severity",a.get("severity"),"explanation",a.get("explanation"),"at",a.get("at"))).toList();
   var openAnomalies=run.anomalies().stream().filter(a->open.stream().anyMatch(o->str(o,"txId").equals(a.txId()))).toList();
-  return m("enabled",true,"generatedAt",run.now().toString(),"forecast",forecast,"breakdown",breakdown,
+  return m("enabled",true,"spendingCount",run.spends().size(),"generatedAt",run.now().toString(),"forecast",forecast,"breakdown",breakdown,
    "recurring",run.recurring().stream().map(Insights.Recurring::view).toList(),"anomalies",openViews,"budgetRisks",risks,"budgetSuggestions",suggestions,
    "cards",Insights.cards(forecast,breakdown,run.recurring(),openAnomalies,risks,suggestions));
  }
@@ -73,11 +74,12 @@ public class InsightsService {
   if(!enabled(uid))return m("enabled",false);
   var run=analyse(uid);
   var forecast=Insights.forecast(run.spends(),run.recurring(),run.now(),null);
-  var open=s.list("ANOMALY",uid).stream().filter(a->"OPEN".equals(str(a,"status"))).count();
+  var actualIds=run.spends().stream().map(Insights.Spend::id).collect(Collectors.toSet());
+  var open=s.list("ANOMALY",uid).stream().filter(a->actualIds.contains(str(a,"txId"))&&"OPEN".equals(str(a,"status"))).count();
   var recurringKeys=run.recurring().stream().map(Insights.Recurring::key).collect(Collectors.toSet());
   var flags=new LinkedHashMap<String,String>();
   for(var sp:run.spends())if(recurringKeys.contains(sp.key()))flags.put(sp.id(),"RECURRING");
-  for(var a:s.list("ANOMALY",uid))flags.put(str(a,"txId"),"ANOMALY");
+  for(var a:s.list("ANOMALY",uid))if(actualIds.contains(str(a,"txId")))flags.put(str(a,"txId"),"ANOMALY");
   return m("enabled",true,"monthSpentMinor",forecast.get("monthSpentMinor"),"projectedMinor",forecast.get("projectedMinor"),"vsLastMonthPct",forecast.get("vsLastMonthPct"),
    "openAnomalies",open,"recurringCount",run.recurring().size(),"flags",flags);
  }

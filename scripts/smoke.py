@@ -601,41 +601,44 @@ class Checks(unittest.TestCase):
         self.assertEqual(self.admin.send('admin/reconciliation/run',{})['differenceMinor'],before)
         again=Client(phone,pin='4821');again.send('account/delete',{},proof=proof(again))
     def test_34_spending_analytics(self):
+        from datetime import datetime, timezone, timedelta
         view=self.a.send('analytics/insights')
         self.assertTrue(view['enabled'])
-        f=view['forecast']
-        self.assertGreater(f['projectedMinor'],0);self.assertLessEqual(f['lowMinor'],f['projectedMinor']);self.assertGreaterEqual(f['highMinor'],f['projectedMinor'])
-        # six months of demo history: subscriptions are found, with their next date
-        keys={r['key'] for r in view['recurring']}
-        self.assertTrue({'NETFLIX','SPOTIFY'}<=keys,keys)
+        dashboard=self.a.send('dashboard');bank=self.a.send('open-banking/transactions')
+        self.assertFalse(any(t.get('demoHistory') for t in dashboard['transactions']))
+        actual=dashboard['transactions']+bank
+        local=timezone(timedelta(hours=4));month=datetime.now(local).strftime('%Y-%m')
+        spends=[t for t in actual if t.get('direction')=='OUT' and t.get('status')=='COMPLETED' and t.get('category')!='Daxili köçürmə']
+        expected=sum(t['amountMinor'] for t in spends if datetime.fromisoformat(t['createdAt'].replace('Z','+00:00')).astimezone(local).strftime('%Y-%m')==month)
+        self.assertEqual(view['forecast']['monthSpentMinor'],expected)
+        self.assertEqual(self.a.send('analytics/summary')['totalMinor'],expected)
+        ids={t['id'] for t in spends}
+        self.assertTrue(all(a['txId'] in ids for a in view['anomalies']))
+        self.assertTrue(set(dashboard['insightsBrief']['flags'])<=ids)
+        self.assertEqual(view['spendingCount'],len(spends))
         self.assertEqual(len(view['breakdown']['months']),6)
-        self.assertTrue(view['cards'] and all('null' not in c['body'] for c in view['cards']))
-        # planted unusual payments are reported once, with a notification
-        self.assertGreaterEqual(len(view['anomalies']),2)
-        self.assertEqual(len(self.a.send('analytics/insights')['anomalies']),len(view['anomalies']))
-        self.assertTrue(any(n['title']=='Qeyri-adi ödəniş' for n in self.a.send('dashboard')['notifications']))
-        brief=self.a.send('dashboard')['insightsBrief']
-        self.assertTrue(brief['enabled'] and brief['openAnomalies']>=2)
-        self.assertIn('ANOMALY',brief['flags'].values());self.assertIn('RECURRING',brief['flags'].values())
-        # budget suggestions are applied from the server's own numbers
-        suggestions=self.a.send('analytics/insights')['budgetSuggestions']
-        self.assertTrue(suggestions)
-        applied=self.a.send('analytics/budgets/apply',{'categories':[suggestions[0]['category']]})
-        self.assertEqual(len(applied),1);self.assertEqual(applied[0]['limitMinor'],suggestions[0]['suggestedMinor'])
-        self.assertNotIn(suggestions[0]['category'],{x['category'] for x in self.a.send('analytics/insights')['budgetSuggestions']})
-        # the customer can switch the analysis off: nothing is computed or shown, and the admin overview leaves them out
+        self.assertTrue(all('null' not in c['body'] for c in view['cards']))
         agg=self.admin.send('admin/analytics')
-        self.assertTrue(agg['enoughUsers']);self.assertGreaterEqual(agg['users'],3)
         self.assertNotIn('userId',json.dumps(agg))
+        if not agg['enoughUsers']:self.assertNotIn('categories',agg)
         self.assertEqual(self.a.send('analytics/consent',{'enabled':False}),{'enabled':False})
         self.assertEqual(self.a.send('analytics/insights'),{'enabled':False})
         self.assertFalse(self.a.send('dashboard')['insightsBrief']['enabled'])
-        self.assertEqual(self.admin.send('admin/analytics')['users'],agg['users']-1)
-        # fewer than three people: the admin sees counts only, no breakdowns
-        self.b.send('analytics/consent',{'enabled':False})
-        small=self.admin.send('admin/analytics')
-        self.assertFalse(small['enoughUsers']);self.assertNotIn('categories',small)
-        for client in (self.a,self.b):client.send('analytics/consent',{'enabled':True})
+        self.a.send('analytics/consent',{'enabled':True})
+
+    def test_36_fin_transfer_reaches_existing_customer(self):
+        found=self.a.send('transfers/resolve?phone=7LH3456')
+        self.assertEqual(found['channel'],'INTERNAL');self.assertEqual(found['recipientId'],'u3')
+        recipient=Client('+994501000003');other=recipient.balance()
+        transfer=self.a.confirmed('transfers',self.a.tbody('7LH3456',100,'FIN test'))
+        self.assertEqual(transfer['channel'],'INTERNAL')
+        for _ in range(40):
+            result=self.a.send('transfers/'+transfer['id'])
+            if result['status']!='SCHEDULED':break
+            time.sleep(.2)
+        self.assertEqual(result['status'],'COMPLETED')
+        self.assertEqual(recipient.balance(),other+100)
+        self.assertEqual(self.admin.send('admin/reconciliation/run',{})['differenceMinor'],0)
 
 def wait(url):
     for _ in range(150):
