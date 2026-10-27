@@ -12,6 +12,7 @@ import static az.kampus.Store.*;
  @PostMapping("/auth/identify") Object identify(@RequestBody Map<String,Object>b){return auth.identify(b);}
  @PostMapping("/auth/otp/verify") Object verifyOtp(@RequestBody Map<String,Object>b){return auth.verifyOtp(b);}
  @PostMapping("/auth/otp") Object otp(@RequestBody Map<String,Object>b){return auth.otp(b);}
+ @PostMapping("/auth/identity/validate") Object validateIdentity(@RequestBody Map<String,Object>b){return auth.validateIdentity(b);}
  @PostMapping("/auth/register") Object register(@RequestBody Map<String,Object>b){return auth.register(b);}
  @PostMapping("/auth/sca/kyc") Object scaKyc(@RequestHeader("Authorization")String token,@RequestHeader("X-Device-Id")String device,@RequestBody Map<String,Object>b){return auth.kycConfirm(auth.user(token,device),b);}
  @PostMapping("/auth/sca") Object sca(@RequestHeader("Authorization")String token,@RequestHeader("X-Device-Id")String device,@RequestBody Map<String,Object>b){return auth.sca(auth.user(token,device),b);}

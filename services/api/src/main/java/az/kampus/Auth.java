@@ -47,7 +47,7 @@ import static az.kampus.Store.*;
   if(users.isEmpty())throw new Problem(401,"INVALID_CREDENTIALS","Telefon və ya PIN yanlışdır.");
   var u=users.getFirst();String id=u.get("id").toString();
   if(((Number)u.get("locked_until")).longValue()>System.currentTimeMillis())throw new Problem(423,"ACCOUNT_LOCKED","Hesab 30 dəqiqəlik bloklanıb.");
-  if(!hash.matches(str(b,"pin"),str(u,"pin_hash"))){failure(id);throw new CredentialFailure("Telefon və ya PIN yanlışdır.");}
+  if(!hash.matches(str(b,"pin"),str(u,"pin_hash"))){int left=failure(id);throw new CredentialFailure(left==0?"Hesab 30 dəqiqəlik bloklanıb.":"PIN yanlışdır. Bloklanmaya qədər "+left+" cəhd qalıb.",left);}
   s.db.update("UPDATE users SET failed_attempts=0,locked_until=0 WHERE id=?",id);
   String token=id()+id();s.db.update("INSERT INTO sessions VALUES(?,?,?,?)",token,id,device,System.currentTimeMillis()+("USER".equals(u.get("role"))?300_000:1_800_000));
   s.audit(id,"LOGIN",m("deviceId",device));return m("accessToken",token,"user",publicUser(new User(id,u.get("name").toString(),phone,u.get("role").toString(),device,((Number)u.get("pin_length")).intValue())),"expiresIn",300);
@@ -76,7 +76,18 @@ import static az.kampus.Store.*;
   var o=s.add("OTP",phone,m("phone",phone,"code",code,"livenessActions",liveness,"expiresAt",System.currentTimeMillis()+300_000,"attempts",0,"used",false));
   return m("otpId",o.get("id"),"demoCode",code,"livenessActions",liveness,"demo",true);
  }
- static final String NAME_PATTERN="[\\p{L}][\\p{L} '\\-]{1,59}";
+ /** Check identity immediately after the verified OTP; final registration repeats this under the same DB lock. */
+ @Transactional Map<String,Object> validateIdentity(Map<String,Object>b){
+  s.lock();var o=s.get("OTP",str(b,"otpId"));
+  Problem.require(!yes(o,"used")&&yes(o,"verified")&&Math.max(num(o,"expiresAt"),o.containsKey("registerUntil")?num(o,"registerUntil"):0L)>System.currentTimeMillis()&&str(o,"code").equals(str(b,"otp")),"INVALID_OTP","Nömrəni əvvəl SMS kodu ilə təsdiqləyin.");
+  String fin=str(b,"fin").trim().toUpperCase(Locale.ROOT),series=str(b,"idSeries").replace(" ","").toUpperCase(Locale.ROOT);
+  Problem.require(fin.matches("[A-Z0-9]{7}"),"FIN_REQUIRED","FİN 7 simvol olmalıdır.");
+  Problem.require(series.matches("AZE[0-9]{8}|(AA|AB|MY|DY|MYI|DYI)[0-9]{7}"),"ID_SERIES_REQUIRED","ŞV seriyasının formatı düzgün deyil.");
+  Problem.require(s.list("KYC",null).stream().noneMatch(k->tokens.has(k,"fin","fin",fin)),"FIN_EXISTS","Bu FİN ilə artıq hesab mövcuddur.");
+  Problem.require(s.list("KYC",null).stream().noneMatch(k->tokens.has(k,"idSeries","series",series)),"ID_SERIES_EXISTS","Bu ŞV seriyası ilə artıq hesab mövcuddur.");
+  return m("valid",true);
+ }
+ static final String NAME_PATTERN="[\\p{L}][\\p{L} '\\-]{1,49}";
  @Transactional Map<String,Object> register(Map<String,Object>b){s.lock();var o=s.get("OTP",str(b,"otpId"));
   Problem.require(!yes(o,"used")&&yes(o,"verified")&&Math.max(num(o,"expiresAt"),o.containsKey("registerUntil")?num(o,"registerUntil"):0L)>System.currentTimeMillis()&&str(o,"code").equals(str(b,"otp")),"INVALID_OTP","SMS kodu təsdiqlənməyib və ya vaxtı bitib. Yeni kod alın.");
   String pin=str(b,"pin"),first=str(b,"name").trim(),last=str(b,"surname").trim(),phone=str(o,"phone"),device=str(b,"deviceId"),fin=str(b,"fin").trim().toUpperCase(Locale.ROOT),series=str(b,"idSeries").replace(" ","").toUpperCase(Locale.ROOT),mode=str(b,"livenessMode");
@@ -110,7 +121,7 @@ import static az.kampus.Store.*;
   return login(m("phone",phone,"pin",pin,"deviceId",device));
  }
  @Transactional(noRollbackFor=CredentialFailure.class) public Map<String,Object> sca(User u,Map<String,Object>b){s.lock();
-  if(!pin(u.id,str(b,"pin"))){failure(u.id);throw new CredentialFailure("PIN yanlışdır.");}
+  if(!pin(u.id,str(b,"pin"))){int left=failure(u.id);throw new CredentialFailure(left==0?"Hesab 30 dəqiqəlik bloklanıb.":"PIN yanlışdır. Bloklanmaya qədər "+left+" cəhd qalıb.",left);}
   s.db.update("UPDATE users SET failed_attempts=0 WHERE id=?",u.id);
   boolean kyc=needsKyc(b.get("payload"));
   var actions=new ArrayList<>(List.of("TURN_LEFT","TURN_RIGHT","BLINK","SMILE"));Collections.shuffle(actions);
@@ -135,7 +146,7 @@ import static az.kampus.Store.*;
   s.audit(u.id,"KYC_STEP_UP_CONFIRMED",m("proof",p.get("id"),"mediaId",mediaId,"selfieSha256",KycMedia.sha256(selfie),"payload",p.get("payload")));
   return m("proof",p.get("id"),"kycDone",true);
  }
- void failure(String user){var r=s.db.queryForMap("SELECT failed_attempts FROM users WHERE id=?",user);int n=((Number)r.get("failed_attempts")).intValue()+1;s.db.update("UPDATE users SET failed_attempts=?,locked_until=? WHERE id=?",n,n>=3?System.currentTimeMillis()+1_800_000:0,user);if(n>=3){s.db.update("DELETE FROM sessions WHERE user_id=?",user);s.add("NOTIFICATION",user,m("title","Hesab bloklandı","body","3 səhv PIN cəhdi. Hesabınız 30 dəqiqəlik bloklandı.","read",false));s.audit(user,"PIN_LOCKOUT",m("attempts",n));}}
+ int failure(String user){var r=s.db.queryForMap("SELECT failed_attempts FROM users WHERE id=?",user);int n=((Number)r.get("failed_attempts")).intValue()+1;s.db.update("UPDATE users SET failed_attempts=?,locked_until=? WHERE id=?",n,n>=3?System.currentTimeMillis()+1_800_000:0,user);if(n>=3){s.db.update("DELETE FROM sessions WHERE user_id=?",user);s.add("NOTIFICATION",user,m("title","Hesab bloklandı","body","3 səhv PIN cəhdi. Hesabınız 30 dəqiqəlik bloklandı.","read",false));s.audit(user,"PIN_LOCKOUT",m("attempts",n));}return Math.max(0,3-n);}
  void requireSca(User u,String proof,String action,Map<String,Object> payload){if(proof==null||proof.isBlank())throw new Problem(403,"SCA_REQUIRED","Məbləğ və alanı PIN ilə təsdiqləyin.");
   var p=s.own("SCA",proof,u.id);Problem.require(!yes(p,"used")&&num(p,"expiresAt")>System.currentTimeMillis()&&str(p,"deviceId").equals(u.device),"SCA_EXPIRED","Təsdiqin vaxtı bitib.");
   var expected=m("action",action,"data",payload);Problem.require(s.encode(p.get("payload")).equals(s.encode(expected)),"SCA_BINDING_MISMATCH","Təsdiq məbləğə və alana uyğun gəlmir.");if(needsKyc(expected)&&!yes(p,"kycDone"))throw new Problem(403,"KYC_REQUIRED","Böyük məbləğ üçün üzünüzü də təsdiqləyin.");p.put("used",true);s.save("SCA",p);for(var counter:s.list("EXEMPT_COUNTER",u.id)){counter.put("count",0);counter.put("sumMinor",0);s.save("EXEMPT_COUNTER",counter);}
