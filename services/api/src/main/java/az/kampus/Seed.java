@@ -39,7 +39,10 @@ import static az.kampus.Store.*;
   }
   l.account("merchant:m1","C");s.add("MERCHANT","u7",m("id","m1","name","Kafe Xazar","mcc","5812","feeBps",50));
   s.add("SETTING","SYSTEM",m("id","crypto.enabled","value",false));s.add("SETTING","SYSTEM",m("id","total_capital_minor","value",75_000_000));
-  s.add("KYC","u1",tokens.protectedRecord(m("userId","u1","phone","+994501000001","name","Aytən Məmmədova","fin","7AZ1234","birthDate","2003-03-15","faceMatchScore",0.96,"liveness","DEMO_SIMULATED","livenessActions",java.util.List.of("TURN_LEFT","BLINK","SMILE"),"simaContractId","sima-seed-u1","status","DEMO_VERIFIED")));
+  s.add("KYC","u1",tokens.protectedRecord(m("userId","u1","phone","+994501000001","name","Aytən Məmmədova","fin","7AZ1234","idSeries","AZE10000001","birthDate","2003-03-15","faceMatchScore",0.96,"liveness","DEMO_SIMULATED","livenessActions",java.util.List.of("TURN_LEFT","BLINK","SMILE"),"simaContractId","sima-seed-u1","status","DEMO_VERIFIED")));
+  s.add("KYC","u2",tokens.protectedRecord(m("userId","u2","phone","+994501000002","name","Murad Əliyev","fin","7MR2345","idSeries","AA1000002","birthDate","2003-03-15","faceMatchScore",0.96,"liveness","DEMO_SIMULATED","livenessActions",java.util.List.of("TURN_LEFT","BLINK","SMILE"),"simaContractId","sima-seed-u2","status","DEMO_VERIFIED")));
+  s.add("KYC","u3",tokens.protectedRecord(m("userId","u3","phone","+994501000003","name","Leyla Həsənova","fin","7LH3456","idSeries","AZE10000003","birthDate","2003-03-15","faceMatchScore",0.96,"liveness","DEMO_SIMULATED","livenessActions",java.util.List.of("TURN_LEFT","BLINK","SMILE"),"simaContractId","sima-seed-u3","status","DEMO_VERIFIED")));
+  s.add("KYC","u4",tokens.protectedRecord(m("userId","u4","phone","+994501000004","name","Kamran Quliyev","fin","7KQ4567","idSeries","AA1000004","birthDate","2003-03-15","faceMatchScore",0.96,"liveness","DEMO_SIMULATED","livenessActions",java.util.List.of("TURN_LEFT","BLINK","SMILE"),"simaContractId","sima-seed-u4","status","DEMO_VERIFIED")));
   s.add("NOTIFICATION","u1",m("title","Kampusa xoş gəldin!","body","Demo hesabında bütün əməliyyatlar test vəsaitləri ilə aparılır.","read",false));
  }
 }
