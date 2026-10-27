@@ -10,7 +10,21 @@ import static az.kampus.Store.*;
  @org.springframework.beans.factory.annotation.Value("${kampus.admin-pin}") String adminPin;
  final Store s;final Ledger l;final Auth a;final Tokens tokens;
  Seed(Store s,Ledger l,Auth a,Tokens tokens){this.s=s;this.l=l;this.a=a;this.tokens=tokens;}
- @Override @Transactional public void run(ApplicationArguments args){base();history();}
+ @Override @Transactional public void run(ApplicationArguments args){base();demoIdentityGaps();history();}
+
+ /** Backfill only the four known demo accounts created before identity fields existed. Never invent a real person's identity. */
+ void demoIdentityGaps(){
+  String[] fins={"7AZ1234","7MR2345","7LH3456","7KQ4567"};
+  String[] ids={"AZE10000001","AA1000002","AZE10000003","AA1000004"};
+  for(int i=1;i<=4;i++){
+   String uid="u"+i,phone="+99450100000"+i;
+   if(s.db.queryForObject("SELECT COUNT(*) FROM users WHERE id=? AND phone=? AND role='USER'",Long.class,uid,phone)==0)continue;
+   var rows=s.list("KYC",uid);var k=rows.isEmpty()?s.add("KYC",uid,m("userId",uid,"phone",phone,"provider","MOCK_REGISTRY_SIMA","status","DEMO_VERIFIED")):rows.getFirst();
+   if(str(k,"finMasked").isBlank()&&str(k,"fin").isBlank())k.put("fin",fins[i-1]);
+   if(str(k,"idSeriesMasked").isBlank()&&str(k,"idSeries").isBlank())k.put("idSeries",ids[i-1]);
+   tokens.protect(k);s.save("KYC",k);
+  }
+ }
 
  /** Six months of believable spending for the four demo students, so the analytics have something to read. Written once; income and spending cancel out, so the ledger and the wallet balances do not move. */
  void history(){
