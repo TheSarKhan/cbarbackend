@@ -48,5 +48,9 @@ class TrelloAuthTests {
   }
   assertEquals(423,assertThrows(Problem.class,()->auth.login(m("phone",phone,"pin","999999999","deviceId","trello-tests"))).status);
  }
+ @Test void namesAllowLatinIncludingAzerbaijaniButRejectCyrillic(){
+  for(String name:List.of("Əli","Çiçək","İlqar","Şəms","Ömər","José","Anne-Marie"))assertTrue(name.matches(Auth.NAME_PATTERN),name);
+  for(String name:List.of("Иван","Aли","محمد","李明"))assertFalse(name.matches(Auth.NAME_PATTERN),name);
+ }
  @Test void namesHaveSameFiftyCharacterLimitAsMobile(){assertTrue("A".repeat(50).matches(Auth.NAME_PATTERN));assertFalse("A".repeat(51).matches(Auth.NAME_PATTERN));}
 }

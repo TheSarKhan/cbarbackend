@@ -87,12 +87,12 @@ import static az.kampus.Store.*;
   Problem.require(s.list("KYC",null).stream().noneMatch(k->tokens.has(k,"idSeries","series",series)),"ID_SERIES_EXISTS","Bu ŞV seriyası ilə artıq hesab mövcuddur.");
   return m("valid",true);
  }
- static final String NAME_PATTERN="[\\p{L}][\\p{L} '\\-]{1,49}";
+ static final String NAME_PATTERN="[\\p{IsLatin}][\\p{IsLatin} '\\-]{1,49}";
  @Transactional Map<String,Object> register(Map<String,Object>b){s.lock();var o=s.get("OTP",str(b,"otpId"));
   Problem.require(!yes(o,"used")&&yes(o,"verified")&&Math.max(num(o,"expiresAt"),o.containsKey("registerUntil")?num(o,"registerUntil"):0L)>System.currentTimeMillis()&&str(o,"code").equals(str(b,"otp")),"INVALID_OTP","SMS kodu təsdiqlənməyib və ya vaxtı bitib. Yeni kod alın.");
-  String pin=str(b,"pin"),first=str(b,"name").trim(),last=str(b,"surname").trim(),phone=str(o,"phone"),device=str(b,"deviceId"),fin=str(b,"fin").trim().toUpperCase(Locale.ROOT),series=str(b,"idSeries").replace(" ","").toUpperCase(Locale.ROOT),mode=str(b,"livenessMode");
+  String pin=str(b,"pin"),first=java.text.Normalizer.normalize(str(b,"name").trim(),java.text.Normalizer.Form.NFC),last=java.text.Normalizer.normalize(str(b,"surname").trim(),java.text.Normalizer.Form.NFC),phone=str(o,"phone"),device=str(b,"deviceId"),fin=str(b,"fin").trim().toUpperCase(Locale.ROOT),series=str(b,"idSeries").replace(" ","").toUpperCase(Locale.ROOT),mode=str(b,"livenessMode");
   Problem.require(pin.matches("[0-9]{4}")&&!device.isBlank(),"INVALID_IDENTITY","Cihaz və 4 rəqəmli PIN tələb olunur.");
-  Problem.require(first.matches(NAME_PATTERN)&&last.matches(NAME_PATTERN),"INVALID_NAME","Ad və soyadı düzgün yazın.");
+  Problem.require(first.matches(NAME_PATTERN)&&last.matches(NAME_PATTERN),"INVALID_NAME","Ad və soyadı 2–50 latın hərfi ilə yazın.");
   String name=first+" "+last;
   Integer avatar=null;if(b.get("avatar")!=null){Problem.require(b.get("avatar") instanceof Number n&&n.intValue()>=0&&n.intValue()<=7,"INVALID_AVATAR","Avatarı siyahıdan seçin.");avatar=((Number)b.get("avatar")).intValue();}
   Problem.require(yes(b,"termsAccepted")&&yes(b,"dataConsent"),"CONSENT_REQUIRED","Şərtlərə və məlumatların emalına razılıq verin.");
