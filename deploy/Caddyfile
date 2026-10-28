@@ -26,10 +26,6 @@
   header Cache-Control "no-store"
   reverse_proxy sim:8081
  }
- handle /bank-app/* {
-  header Cache-Control "no-store"
-  reverse_proxy sim:8081
- }
  handle {
   reverse_proxy mobile:8082
  }

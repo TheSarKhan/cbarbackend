@@ -95,7 +95,7 @@ import static az.kampus.Store.*;
  }
  /** Keeps a token for the card, not the card: the next top-up needs one tap and no CVV. */
  Map<String,Object> saveCard(String uid,Map<String,Object> card){var same=s.list("SAVED_CARD",uid).stream().filter(x->str(x,"label").equals(str(card,"label"))&&str(x,"expiry").equals(str(card,"expiry"))).findFirst();if(same.isPresent())return same.get();var saved=new LinkedHashMap<>(card);saved.put("token","tok_"+id().replace("-",""));return s.add("SAVED_CARD",uid,saved);}
- static Map<String,Object> redacted(Map<String,Object> b){if(b.get("number") instanceof String n){var r=new LinkedHashMap<>(b);String d=n.replaceAll("[ -]","");r.put("number","•••• "+(d.length()>=4?d.substring(d.length()-4):""));return r;}if(!(b.get("card") instanceof Map<?,?>c))return b;var r=new LinkedHashMap<>(b);String n=Objects.toString(c.get("number"),"").replaceAll("[ -]","");r.put("card",m("last4",n.length()>=4?n.substring(n.length()-4):""));return r;}
+ static Map<String,Object> redacted(Map<String,Object> b){if(b.containsKey("code")){var r=new LinkedHashMap<>(b);r.put("code","••••••");return r;}if(b.get("number") instanceof String n){var r=new LinkedHashMap<>(b);String d=n.replaceAll("[ -]","");r.put("number","•••• "+(d.length()>=4?d.substring(d.length()-4):""));return r;}if(!(b.get("card") instanceof Map<?,?>c))return b;var r=new LinkedHashMap<>(b);String n=Objects.toString(c.get("number"),"").replaceAll("[ -]","");r.put("card",m("last4",n.length()>=4?n.substring(n.length()-4):""));return r;}
  void scaIf(Auth.User u,String proof,String action,Map<String,Object>b,boolean required){long a=amount(b);var counter=s.list("EXEMPT_COUNTER",u.id());long count=counter.isEmpty()?0:num(counter.getFirst(),"count"),sum=counter.isEmpty()?0:num(counter.getFirst(),"sumMinor");if(required||count>=5||sum+a>30000)auth.requireSca(u,proof,action,b);else {var state=counter.isEmpty()?s.add("EXEMPT_COUNTER",u.id(),m("count",0,"sumMinor",0)):counter.getFirst();state.put("count",count+1);state.put("sumMinor",sum+a);s.save("EXEMPT_COUNTER",state);}}
  @Transactional public Object write(Auth.User u,String path,Map<String,Object>b,String key,String proof){
   s.lock();Problem.require(key!=null&&key.matches("[A-Za-z0-9_-]{8,128}"),"IDEMPOTENCY_REQUIRED","Unikal Idempotency-Key tələb olunur.");
@@ -140,6 +140,17 @@ import static az.kampus.Store.*;
     if(requested.contains(h))matches.add(m("userId",r.get("id"),"maskedName",r.get("name"),"phone",ph,"phoneHash",h,"avatar",r.get("avatar")));
    }
    return m("matches",matches);
+  }
+  // The recipient's bank app, simulated: FİN and phone, an SMS code, then the account that receives an AniPay transfer.
+  if(p.startsWith("anipay-bank/")){
+   var allowed=Map.of("start",Set.of("bankId","fin","phone"),"verify",Set.of("sessionId","code"),"accept",Set.of("sessionId","transferId","accountId"));
+   Problem.require(parts.length==2&&allowed.containsKey(parts[1])&&allowed.get(parts[1]).containsAll(b.keySet()),"NOT_FOUND","Səhifə tapılmadı.");
+   Map<String,Object> r;
+   try{r=sim.call("/anipay/bank/"+parts[1],b);}catch(Problem refused){throw new Problem(422,"BANK_SESSION","Bank sessiyasının vaxtı bitib və ya məlumat yanlışdır. Yenidən başlayın.");}
+   if(parts[1].equals("start"))Problem.require(yes(r,"customer"),"NOT_A_CUSTOMER","Bu FİN və nömrə ilə bu bankın müştərisi tapılmadı. Başqa bank seçin.");
+   if(parts[1].equals("verify")&&!yes(r,"verified")){Problem.require(num(r,"attemptsLeft")>0,"OTP_LOCKED","Kod 3 dəfə yanlış daxil edildi. Yenidən başlayın.");throw new Problem(422,"OTP_INVALID","Kod yanlışdır. "+r.get("attemptsLeft")+" cəhd qalıb.");}
+   Problem.require(!(parts[1].equals("accept")&&str(r,"status").equals("UNAVAILABLE")),"TRANSFER_UNAVAILABLE","Bu köçürmə artıq qəbul edilib və ya vaxtı bitib.");
+   return r;
   }
   if(p.equals("transfers")){
    long a=amount(b);Problem.require(a<=100_000,"TRANSFER_LIMIT","Bir köçürmə maksimum 1 000 AZN-dir.");var to=resolve(str(b,"phone"));Problem.require(!uid.equals(to.get("recipientId")),"SELF_TRANSFER","Özünüzə göndərə bilməzsiniz.");
@@ -248,7 +259,6 @@ import static az.kampus.Store.*;
   if(p.startsWith("card-transfers")||p.startsWith("card-sessions/")||p.startsWith("recipient-cards"))return cardTransfers.read(u,p);
   if(p.startsWith("open-banking/"))return openBanking.read(u,p);
   return switch(p){
-   case "anipay/bank-app" -> m("simPort",sim.localPort);
    case "wallet" -> l.wallet(uid);
    case "dashboard" -> m("user",auth.publicUser(u),"wallet",l.wallet(uid),"transactions",customerTransactions(uid),"transfers",publicTransfers(uid),"trustedBeneficiaries",s.list("TRUSTED_BENEFICIARY",uid),"savedCards",s.list("SAVED_CARD",uid).stream().map(c->{var r=new LinkedHashMap<>(c);r.remove("token");return r;}).toList(),"topupQrs",s.list("TOPUP_QR",uid),"notifications",s.list("NOTIFICATION",uid),"requests",s.list("REQUEST",uid),"bnplLoans",s.list("BNPL",uid),"partnerLoans",s.list("PARTNER_LOAN",uid),"applications",s.list("APPLICATION",uid),"offers",s.list("OFFER",uid),"bnplEligibility",creditPolicy.eligibility(uid),"bnplAvailableMinor",creditPolicy.eligibility(uid).get("availableMinor"),"analytics",analytics(uid),"insightsBrief",insights.brief(uid),"openBanking",openBanking.overview(uid),"budgets",s.list("BUDGET",uid),"splits",s.list("SPLIT",uid),"cardTransfers",s.list("CARD_TRANSFER",uid).stream().map(cardTransfers::publicTransfer).toList(),"recipientCards",cardTransfers.read(u,"recipient-cards"));
    case "transactions" -> customerTransactions(uid);
