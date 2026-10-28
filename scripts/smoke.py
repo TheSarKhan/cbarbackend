@@ -600,6 +600,33 @@ class Checks(unittest.TestCase):
         self.assertNotEqual(first['user']['id'],second['user']['id'])
         self.assertEqual(self.admin.send('admin/reconciliation/run',{})['differenceMinor'],before)
         again=Client(phone,pin='4821');again.send('account/delete',{},proof=proof(again))
+    def test_37_pin_change_and_transfer_note_for_the_recipient(self):
+        import base64
+        selfie='data:image/jpeg;base64,'+base64.b64encode((pathlib.Path(__file__).resolve().parent/'fixtures'/'selfie.jpg').read_bytes()).decode()
+        phone='+994509998833'
+        otp=self.a.send('auth/otp',{'phone':phone})
+        self.a.send('auth/otp/verify',{'otpId':otp['otpId'],'otp':otp['demoCode']})
+        self.a.send('auth/register',{'otpId':otp['otpId'],'otp':otp['demoCode'],'name':'Murat','surname':'Nəsirov','birthDate':'2001-02-03','pin':'4821','deviceId':'demo-device','termsAccepted':True,'dataConsent':True,'fin':'7AZ7788','idSeries':'AZE11223344','facesCount':1,'simaSigned':True,'livenessMode':'MEDIAPIPE_WEB','livenessActions':otp['livenessActions'],'selfie':selfie})
+        me=Client(phone,pin='4821')
+        # a wrong current PIN, a wrong length and the same PIN are refused
+        me.send('auth/pin/change',{'currentPin':'0000','newPin':'5934'},status=401)
+        me.send('auth/pin/change',{'currentPin':'4821','newPin':'59'},status=422)
+        me.send('auth/pin/change',{'currentPin':'4821','newPin':'4821'},status=422)
+        self.assertTrue(me.send('auth/pin/change',{'currentPin':'4821','newPin':'5934'})['changed'])
+        self.a.send('auth/login',{'phone':phone,'pin':'4821','deviceId':'demo-device'},status=401)
+        again=Client(phone,pin='5934')
+        # the sender's note reaches the recipient's transaction and notification
+        self.a.confirmed('transfers',self.a.tbody(phone,100,'smoke-note'))
+        found=None
+        for _ in range(30):
+            rows=again.send('dashboard')['transactions']
+            found=next((r for r in rows if r.get('note')=='smoke-note'),None)
+            if found:break
+            time.sleep(0.5)
+        self.assertIsNotNone(found)
+        self.assertTrue(any('smoke-note' in n.get('body','') for n in again.send('dashboard')['notifications']))
+        proof=again.send('auth/sca',{'pin':'5934','payload':{'action':'account/delete','data':{}}})['proof']
+        again.send('account/delete',{},proof=proof)
     def test_34_spending_analytics(self):
         from datetime import datetime, timezone, timedelta
         view=self.a.send('analytics/insights')

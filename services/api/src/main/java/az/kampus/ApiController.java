@@ -15,6 +15,7 @@ import static az.kampus.Store.*;
  @PostMapping("/auth/identity/validate") Object validateIdentity(@RequestBody Map<String,Object>b){return auth.validateIdentity(b);}
  @PostMapping("/auth/register") Object register(@RequestBody Map<String,Object>b){return auth.register(b);}
  @PostMapping("/auth/sca/kyc") Object scaKyc(@RequestHeader("Authorization")String token,@RequestHeader("X-Device-Id")String device,@RequestBody Map<String,Object>b){return auth.kycConfirm(auth.user(token,device),b);}
+ @PostMapping("/auth/pin/change") Object changePin(@RequestHeader("Authorization")String token,@RequestHeader("X-Device-Id")String device,@RequestBody Map<String,Object>b){return auth.changePin(auth.user(token,device),b);}
  @PostMapping("/auth/sca") Object sca(@RequestHeader("Authorization")String token,@RequestHeader("X-Device-Id")String device,@RequestBody Map<String,Object>b){return auth.sca(auth.user(token,device),b);}
  @PostMapping("/auth/logout") Object logout(HttpServletRequest r){var u=auth.user(r.getHeader("Authorization"),r.getHeader("X-Device-Id"));store.db.update("DELETE FROM sessions WHERE token=?",r.getHeader("Authorization").substring(7));return m("loggedOut",true);}
  @GetMapping("/admin/kyc/{userId}/selfie") Object kycSelfie(HttpServletRequest r,@PathVariable String userId){var u=auth.user(r.getHeader("Authorization"),r.getHeader("X-Device-Id"));auth.role(u,"ADMIN","COMPLIANCE");return media.selfie(userId,u.id());}

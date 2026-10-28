@@ -66,6 +66,8 @@ import static az.kampus.Store.*;
   s.db.update("DELETE FROM users WHERE id=?",uid);
   return m("deleted",true);
  }
+ /** The sender's note travels with the transaction, so the recipient sees it too. */
+ void withNote(Map<String,Object> row,String note){if(!note.isBlank()){row.put("note",note);s.save("TX",row);}}
  boolean isBlacklisted(String phone){return s.list("BLACKLIST",null).stream().anyMatch(x->phone.equals(str(x,"target")));}
  Map<String,Object> risk(Auth.User u,Map<String,Object>b){long a=amount(b);int score=0;var rules=new ArrayList<String>();String note=str(b,"note").toLowerCase(Locale.forLanguageTag("az")),phone=str(b,"phone");
   if(s.list("BLACKLIST",null).stream().anyMatch(x->phone.equals(str(x,"target")))){score+=100;rules.add("BLACKLIST");}
@@ -294,7 +296,7 @@ import static az.kampus.Store.*;
    if(isBlacklisted(str(t,"phone"))||isBlacklisted(str(t,"recipientPhone"))){l.release(str(t,"holdId"));returnToCard(t);t.put("status","REJECTED");s.save("TRANSFER",t);notify(str(t,"senderId"),"Köçürmə bloklandı","Alan qara siyahıya əlavə edilib. Rezerv açıldı.");continue;}
    String sender=str(t,"senderId"),to=str(t,"recipientId");long a=num(t,"amountMinor");boolean external=str(t,"channel").equals("ANIPAY");boolean ok=true;
    if(external){try{sim.call("/anipay/transfers",m("transferId",t.get("id"),"amountMinor",a));}catch(Problem e){ok=false;}}
-   l.release(str(t,"holdId"));if(!ok)returnToCard(t);if(ok){l.post("P2P","Köçürmə","wallet:"+sender,external?"ANIPAY_SETTLEMENT":"wallet:"+to,a);if(external)payout("ANIPAY_SETTLEMENT",a);tx(sender,"P2P",str(t,"recipientName"),a,"OUT","Köçürmələr");if(!external){tx(to,"P2P",s.db.queryForObject("SELECT name FROM users WHERE id=?",String.class,sender),a,"IN","Daxilolmalar");notify(to,"Pul gəldi","Kampus köçürməsi balansınıza əlavə edildi.");}}
+   l.release(str(t,"holdId"));if(!ok)returnToCard(t);if(ok){l.post("P2P","Köçürmə","wallet:"+sender,external?"ANIPAY_SETTLEMENT":"wallet:"+to,a);if(external)payout("ANIPAY_SETTLEMENT",a);String note=str(t,"note").trim();withNote(tx(sender,"P2P",str(t,"recipientName"),a,"OUT","Köçürmələr"),note);if(!external){withNote(tx(to,"P2P",s.db.queryForObject("SELECT name FROM users WHERE id=?",String.class,sender),a,"IN","Daxilolmalar"),note);notify(to,"Pul gəldi",note.isBlank()?"Kampus köçürməsi balansınıza əlavə edildi.":"Qeyd: "+note);}}
    t.put("status",ok?"COMPLETED":"REJECTED");s.save("TRANSFER",t);notify(sender,ok?"Köçürmə tamamlandı":"Köçürmə alınmadı",ok?str(t,"recipientName"):"Rezerv edilmiş vəsait açıldı.");
   }}
   for(var f:s.list("FRAUD",null))if(str(f,"status").equals("OPEN")&&num(f,"expiresAt")<System.currentTimeMillis()){var t=s.get("TRANSFER",str(f,"transferId"));l.release(str(t,"holdId"));returnToCard(t);t.put("status","REJECTED");s.save("TRANSFER",t);f.put("status","EXPIRED");s.save("FRAUD",f);}

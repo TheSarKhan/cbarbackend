@@ -120,6 +120,17 @@ import static az.kampus.Store.*;
   s.add("KYC",user,tokens.protectedRecord(m("userId",user,"userName",name,"firstName",first,"lastName",last,"phone",phone,"fin",fin,"idSeries",series,"status","DEMO_VERIFIED","provider","MOCK_REGISTRY_SIMA","liveness","CLIENT_REPORTED","livenessProvider",mode,"livenessActions",done,"faceMatchScore",faceScore,"contractId",sima.get("contractId"),"signatureHash",sima.get("signatureHash"),"mediaStored",true,"selfieMediaId",mediaId,"selfieSha256",KycMedia.sha256(selfie),"birthDate",birth.toString())));
   return login(m("phone",phone,"pin",pin,"deviceId",device));
  }
+ /** Changes the PIN after the current one is checked; a wrong current PIN counts like any other wrong PIN. The new PIN keeps the length of the account's PIN. */
+ @Transactional(noRollbackFor=CredentialFailure.class) public Map<String,Object> changePin(User u,Map<String,Object> b){s.lock();
+  Problem.require("USER".equals(u.role),"NOT_ALLOWED","Yalnız tələbə hesabında PIN dəyişdirilir.");
+  String current=str(b,"currentPin"),next=str(b,"newPin");
+  Problem.require(next.matches("[0-9]{"+u.pinLength+"}"),"INVALID_PIN","Yeni PIN "+u.pinLength+" rəqəm olmalıdır.");
+  Problem.require(!current.equals(next),"SAME_PIN","Yeni PIN köhnəsindən fərqli olmalıdır.");
+  if(!pin(u.id,current)){int left=failure(u.id);throw new CredentialFailure(left==0?"Hesab 30 dəqiqəlik bloklanıb.":"Cari PIN yanlışdır. Bloklanmaya qədər "+left+" cəhd qalıb.",left);}
+  s.db.update("UPDATE users SET pin_hash=?,failed_attempts=0 WHERE id=?",hash.encode(next),u.id);
+  s.audit(u.id,"PIN_CHANGED",m());
+  return m("changed",true);
+ }
  @Transactional(noRollbackFor=CredentialFailure.class) public Map<String,Object> sca(User u,Map<String,Object>b){s.lock();
   if(!pin(u.id,str(b,"pin"))){int left=failure(u.id);throw new CredentialFailure(left==0?"Hesab 30 dəqiqəlik bloklanıb.":"PIN yanlışdır. Bloklanmaya qədər "+left+" cəhd qalıb.",left);}
   s.db.update("UPDATE users SET failed_attempts=0 WHERE id=?",u.id);
