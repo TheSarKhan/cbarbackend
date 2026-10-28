@@ -1,6 +1,6 @@
 # Kampus backend
 
-Java 21/Spring Boot API və ayrıca bank, kart, reyestr/SİMA və VASP simulyatoru. Demo vəsaitləri istifadə olunur.
+Java 21/Spring Boot API və ayrıca bank, kart, reyestr/SİMA simulyatoru. Demo vəsaitləri istifadə olunur.
 
 Layihə üç repoya bölünüb:
 

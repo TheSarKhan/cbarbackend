@@ -43,7 +43,7 @@ import static az.kampus.Store.*;
  }
 
  void base(){s.lock();for(var kyc:s.list("KYC",null)){kyc.put("status","DEMO_VERIFIED");kyc.put("liveness","DEMO_SIMULATED");kyc.put("mediaStored",false);kyc.remove("artifactCipher");kyc.remove("livenessPassed");tokens.protect(kyc);s.save("KYC",kyc);}if(s.db.queryForObject("SELECT COUNT(*) FROM users",Long.class)>0)return;
-  for(String acc:new String[]{"CUSTOMER_FUNDS_BANK","OWN_FUNDS_BANK","CREDIT_RECEIVABLE","CARD_SETTLEMENT","ANIPAY_SETTLEMENT","VASP_SETTLEMENT","LENDER_SETTLEMENT"})l.account(acc,"D");
+  for(String acc:new String[]{"CUSTOMER_FUNDS_BANK","OWN_FUNDS_BANK","CREDIT_RECEIVABLE","CARD_SETTLEMENT","ANIPAY_SETTLEMENT","LENDER_SETTLEMENT"})l.account(acc,"D");
   l.account("FEE_INCOME","C");l.account("CAPITAL","C");l.post("CAPITAL","Demo öz kapitalı","OWN_FUNDS_BANK","CAPITAL",75_000_000);
   String[] names={"Aytən Məmmədova","Murad Əliyev","Leyla Həsənova","Kamran Quliyev","Kampus Admin","Uyğunluq əməkdaşı","Kafe Xazar"};
   String hash=a.encodePin(demoPin),adminHash=a.encodePin(adminPin);
@@ -52,7 +52,7 @@ import static az.kampus.Store.*;
    if(role.equals("USER")){l.account("wallet:"+id,"C");l.post("TOPUP","Demo başlanğıc balansı","CUSTOMER_FUNDS_BANK","wallet:"+id,i==0?52_480:25_000);long initial=i==0?52_480:25_000;for(int n=0;n<3;n++){long a=n==2?initial-initial/4*2:initial/4;s.add("TX",id,m("type","TOPUP","name","Demo başlanğıc daxilolması","amountMinor",a,"direction","IN","status","COMPLETED","category","Daxilolmalar","createdAt",java.time.Instant.now().minus(java.time.Duration.ofDays(n==0?65:n==1?20:10)).toString()));}}
   }
   l.account("merchant:m1","C");s.add("MERCHANT","u7",m("id","m1","name","Kafe Xazar","mcc","5812","feeBps",50));
-  s.add("SETTING","SYSTEM",m("id","crypto.enabled","value",false));s.add("SETTING","SYSTEM",m("id","total_capital_minor","value",75_000_000));
+  s.add("SETTING","SYSTEM",m("id","total_capital_minor","value",75_000_000));
   s.add("KYC","u1",tokens.protectedRecord(m("userId","u1","phone","+994501000001","name","Aytən Məmmədova","fin","7AZ1234","idSeries","AZE10000001","birthDate","2003-03-15","faceMatchScore",0.96,"liveness","DEMO_SIMULATED","livenessActions",java.util.List.of("TURN_LEFT","BLINK","SMILE"),"simaContractId","sima-seed-u1","status","DEMO_VERIFIED")));
   s.add("KYC","u2",tokens.protectedRecord(m("userId","u2","phone","+994501000002","name","Murad Əliyev","fin","7MR2345","idSeries","AA1000002","birthDate","2003-03-15","faceMatchScore",0.96,"liveness","DEMO_SIMULATED","livenessActions",java.util.List.of("TURN_LEFT","BLINK","SMILE"),"simaContractId","sima-seed-u2","status","DEMO_VERIFIED")));
   s.add("KYC","u3",tokens.protectedRecord(m("userId","u3","phone","+994501000003","name","Leyla Həsənova","fin","7LH3456","idSeries","AZE10000003","birthDate","2003-03-15","faceMatchScore",0.96,"liveness","DEMO_SIMULATED","livenessActions",java.util.List.of("TURN_LEFT","BLINK","SMILE"),"simaContractId","sima-seed-u3","status","DEMO_VERIFIED")));

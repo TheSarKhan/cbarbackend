@@ -1,6 +1,6 @@
 # Kampus demo deploy
 
-Bu paket real pul xidmətinə deyil, mövcud bank/SİMA/VASP simulyatorları ilə işləyən nümayiş sisteminə aiddir. Backend, Android tətbiqi, mobil veb və admin eyni API istifadə edir. İctimai yayımlama istifadəçi ayrıca deyəndə edilir.
+Bu paket real pul xidmətinə deyil, mövcud bank/SİMA simulyatorları ilə işləyən nümayiş sisteminə aiddir. Backend, Android tətbiqi, mobil veb və admin eyni API istifadə edir. İctimai yayımlama istifadəçi ayrıca deyəndə edilir.
 
 ## Paket
 
@@ -81,7 +81,7 @@ Bərpa uğursuz olsa yazan servislər dayandırılmış qalır; problemi həll e
 
 ## Sərhədlər
 
-Bu, deploy oluna bilən demo paketidir. SİMA, reyestr, canlılıq/üz yoxlaması, bank/kreditor və VASP simulyasiyadır; real maliyyə xidməti kimi təqdim edilmir. Kamera ML Kit, real bank çıxarışı ilə üzləşdirmə, push/SMS və aparatla cihaz bağlama ayrıca inteqrasiyalardır. Təqdimat razılaşmaya əsasən sonraya saxlanıb.
+Bu, deploy oluna bilən demo paketidir. SİMA, reyestr, canlılıq/üz yoxlaması, bank/kreditor simulyasiyadır; real maliyyə xidməti kimi təqdim edilmir. Kamera ML Kit, real bank çıxarışı ilə üzləşdirmə, push/SMS və aparatla cihaz bağlama ayrıca inteqrasiyalardır. Təqdimat razılaşmaya əsasən sonraya saxlanıb.
 
 ## KYC fotoları və `KYC_MEDIA_KEY`
 

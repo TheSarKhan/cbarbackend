@@ -37,7 +37,7 @@ class Checks(unittest.TestCase):
     def test_01_auth_and_role_boundaries(self):
         self.a.send('admin/overview',status=403)
         self.merchant.send('admin/overview',status=403)
-        self.compliance.send('admin/feature-flags/crypto.enabled',{'value':True},status=403)
+        self.compliance.send('admin/system-params/total_capital_minor',{'value':80000000},status=403)
         req=urllib.request.Request(BASE+'wallet')
         with self.assertRaises(urllib.error.HTTPError) as e: urllib.request.urlopen(req)
         self.assertEqual(e.exception.code,401)
@@ -116,23 +116,6 @@ class Checks(unittest.TestCase):
         loan=next(l for l in self.a.send('bnpl/loans') if l['status']=='ACTIVE')
         self.a.confirmed('bnpl/loans/'+loan['id']+'/repay',{})
         self.assertEqual(self.a.send('bnpl/eligibility')['availableMinor'],5000)
-    def test_11_crypto_gate_trade_and_qr(self):
-        self.a.send('crypto/portfolio',status=403)
-        self.admin.send('admin/feature-flags/crypto.enabled',{'value':True})
-        initial=self.a.send('crypto/portfolio')['balanceMicro'];before=self.a.balance()
-        q=self.a.send('crypto/quotes',{'asset':'USDT','side':'BUY','amountMinor':1700})
-        self.a.confirmed('crypto/orders',{'quoteId':q['id'],'riskAccepted':True})
-        self.assertEqual(self.a.balance(),before-1700);self.assertEqual(self.a.send('crypto/portfolio')['balanceMicro'],initial+10000000)
-        self.a.send('crypto/orders',{'quoteId':q['id'],'riskAccepted':True},status=422)
-        i=self.merchant.send('merchant/qr/dynamic',{'amountMinor':1700})
-        self.a.confirmed('payments/qr',self.a.qr_body(i['qrPayload'],1700,'CRYPTO',riskAccepted=True))
-        self.assertEqual(self.a.send('crypto/portfolio')['balanceMicro'],initial)
-    def test_11b_expired_crypto_quote(self):
-        before=self.a.balance()
-        q=self.a.send('crypto/quotes',{'asset':'USDT','side':'SELL','amountMinor':170})
-        time.sleep(30.2)
-        self.a.send('crypto/orders',{'quoteId':q['id'],'riskAccepted':True},status=422)
-        self.assertEqual(self.a.balance(),before)
     def test_13_reconciliation(self):
         r=self.admin.send('admin/reconciliation/run',{})
         self.assertEqual(r['status'],'MATCHED');self.assertEqual(r['differenceMinor'],0)
@@ -276,16 +259,7 @@ class Checks(unittest.TestCase):
         self.assertTrue(t['trustedBeneficiary'])
         self.a.send('transfers/'+t['id']+'/cancel',{})
         self.a.send('trusted-beneficiaries/'+tb['id']+'/delete',{})
-    def test_22_crypto_deposit_aml_withdrawal_and_budget_alerts(self):
-        self.admin.send('admin/feature-flags/crypto.enabled',{'value':True})
-        addr=self.a.send('crypto/deposit-address')
-        self.assertTrue(addr['address'].startswith('TKampus'))
-        dep_ok=self.a.send('crypto/deposits',{'amountMicro':15000000,'fromAddress':'T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb'})
-        self.assertEqual(dep_ok['amlStatus'],'CREDITED')
-        dep_aml=self.a.send('crypto/deposits',{'amountMicro':20000000,'fromAddress':'TBLACKLIST999SANCTION'})
-        self.assertEqual(dep_aml['amlStatus'],'FROZEN_FOR_AML')
-        wd=self.a.confirmed('crypto/withdrawals',{'amountMicro':5000000,'toAddress':'TN3W4H6rK2ce4vX9YnFQHwKENnHjoxb3m9','beneficiaryName':'Murad Əliyev'})
-        self.assertEqual(wd['amlStatus'],'COMPLETED')
+    def test_22_split_budget_and_category(self):
         sp=self.a.send('splits',{'totalMinor':3000,'mode':'CUSTOM','participants':[{'phone':'+994501000002','amountMinor':1200}],'note':'Xüsusi hesab'})
         self.assertEqual(sp['organizerShareMinor'],1800)
         self.a.send('budgets',{'category':'Nəqliyyat','limitMinor':1000})
@@ -299,13 +273,10 @@ class Checks(unittest.TestCase):
         self.a.send('contacts/match',{},status=422)
         self.a.send('contacts/match',{'phones':['+994501000002']},status=422)
         self.a.send('contacts/match',{'phoneHashes':['not-a-hash']},status=422)
-    def test_25_bitcoin_preview_cannot_bypass_crypto_gate(self):
-        self.admin.send('admin/feature-flags/crypto.enabled',{'value':False})
+    def test_25_unknown_top_up_source_is_rejected(self):
         before=self.a.balance()
         self.a.send('topups',{'source':'BITCOIN','amountMinor':1000},status=422)
-        self.a.send('crypto/portfolio',status=403)
         self.assertEqual(self.a.balance(),before)
-        self.admin.send('admin/feature-flags/crypto.enabled',{'value':True})
     def test_26_logout_revokes_session(self):
         client=Client('+994501000002','logout-device')
         client.send('auth/logout',{})
@@ -313,21 +284,6 @@ class Checks(unittest.TestCase):
     def test_27_new_account_is_not_automatically_bnpl_eligible(self):
         self.assertIn('recentIncomingCount',self.a.send('bnpl/eligibility'))
         self.assertTrue(self.a.send('health/ready')['database']=='UP')
-    def test_28_provider_retries_do_not_duplicate_crypto(self):
-        def provider(path,body):
-            req=urllib.request.Request(SIM_BASE+path,data=json.dumps(body).encode(),headers={'Content-Type':'application/json','X-Api-Key':'kampus-local-simulator-key'})
-            with urllib.request.urlopen(req,timeout=10) as r:return json.load(r)
-        uid='provider-retry-'+str(uuid.uuid4())
-        initial=provider('/vasp/portfolio',{'userId':uid})['balanceMicro']
-        deposit={'userId':uid,'operationId':str(uuid.uuid4()),'amountMicro':1000000,'fromAddress':'TDEMO'}
-        first=provider('/vasp/deposit',deposit);second=provider('/vasp/deposit',deposit)
-        self.assertEqual(first,second)
-        with self.assertRaises(urllib.error.HTTPError) as conflict:provider('/vasp/deposit',{**deposit,'amountMicro':2000000})
-        self.assertEqual(conflict.exception.code,409)
-        self.assertEqual(provider('/vasp/portfolio',{'userId':uid})['balanceMicro'],initial+1000000)
-        withdrawal={'userId':uid,'operationId':str(uuid.uuid4()),'amountMicro':1000000,'toAddress':'TDEMO','beneficiaryName':'Demo'}
-        self.assertEqual(provider('/vasp/withdraw',withdrawal),provider('/vasp/withdraw',withdrawal))
-        self.assertEqual(provider('/vasp/portfolio',{'userId':uid})['balanceMicro'],initial)
     def test_14_pin_lockout(self):
         for _ in range(3):
             self.a.send('auth/login',{'phone':'+994501000004','pin':'000000','deviceId':'demo-device'},status=401)
