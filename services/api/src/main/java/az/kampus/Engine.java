@@ -248,6 +248,7 @@ import static az.kampus.Store.*;
   if(p.startsWith("card-transfers")||p.startsWith("card-sessions/")||p.startsWith("recipient-cards"))return cardTransfers.read(u,p);
   if(p.startsWith("open-banking/"))return openBanking.read(u,p);
   return switch(p){
+   case "anipay/bank-app" -> m("simPort",sim.localPort);
    case "wallet" -> l.wallet(uid);
    case "dashboard" -> m("user",auth.publicUser(u),"wallet",l.wallet(uid),"transactions",customerTransactions(uid),"transfers",publicTransfers(uid),"trustedBeneficiaries",s.list("TRUSTED_BENEFICIARY",uid),"savedCards",s.list("SAVED_CARD",uid).stream().map(c->{var r=new LinkedHashMap<>(c);r.remove("token");return r;}).toList(),"topupQrs",s.list("TOPUP_QR",uid),"notifications",s.list("NOTIFICATION",uid),"requests",s.list("REQUEST",uid),"bnplLoans",s.list("BNPL",uid),"partnerLoans",s.list("PARTNER_LOAN",uid),"applications",s.list("APPLICATION",uid),"offers",s.list("OFFER",uid),"bnplEligibility",creditPolicy.eligibility(uid),"bnplAvailableMinor",creditPolicy.eligibility(uid).get("availableMinor"),"analytics",analytics(uid),"insightsBrief",insights.brief(uid),"openBanking",openBanking.overview(uid),"budgets",s.list("BUDGET",uid),"splits",s.list("SPLIT",uid),"cardTransfers",s.list("CARD_TRANSFER",uid).stream().map(cardTransfers::publicTransfer).toList(),"recipientCards",cardTransfers.read(u,"recipient-cards"));
    case "transactions" -> customerTransactions(uid);
