@@ -318,6 +318,12 @@ class Checks(unittest.TestCase):
         quote=self.a.send('card-transfers/fee-quote',{'sessionId':card['sessionId'],'amountMinor':2000,'purpose':'P2P'})
         self.assertEqual((quote['amountMinor'],quote['last4']),(2000,'1234'))
         self.b.send('card-transfers/fee-quote',{'sessionId':card['sessionId'],'amountMinor':2000,'purpose':'P2P'},status=403)
+    def test_39b_the_same_card_is_saved_once(self):
+        # sending to the same card twice keeps one saved card
+        for _ in range(2):
+            qq=self.a.send('card-transfers/fee-quote',{'sessionId':self.a.send('card-transfers/card',{'number':'5222081122334452'})['sessionId'],'amountMinor':1000,'purpose':'SEND'})
+            self.a.confirmed('card-transfers',{'quoteId':qq['id'],'amountMinor':qq['amountMinor'],'totalMinor':qq['totalMinor'],'recipientName':qq['bankName']+' · •••• '+qq['last4'],'saveAs':'PAŞA'})
+        self.assertEqual(len([c for c in self.a.send('recipient-cards') if c['last4']=='4452']),1)
     def test_26_logout_revokes_session(self):
         client=Client('+994501000002','logout-device')
         client.send('auth/logout',{})
@@ -490,6 +496,19 @@ class Checks(unittest.TestCase):
             if len(booked)>=2:break
             time.sleep(1)
         self.assertEqual(len(booked),2,booked);self.assertTrue(all(x['category']=='Daxili köçürmə' for x in booked))
+        self.assertEqual(self.admin.send('admin/reconciliation/run',{})['differenceMinor'],0)
+        # a bank-card transfer to a typed card is paid from the shared card; the network declines it, so the money returns to the card
+        dest=self.a.send('card-transfers/card',{'number':'4000000000000002'})
+        q=self.a.send('card-transfers/fee-quote',{'sessionId':dest['sessionId'],'amountMinor':2000,'purpose':'SEND'})
+        body={'quoteId':q['id'],'amountMinor':q['amountMinor'],'totalMinor':q['totalMinor'],'recipientName':q['bankName']+' · •••• '+q['last4'],'fundingAccountId':card_id}
+        ct=self.a.confirmed('card-transfers',body)
+        self.assertEqual(ct['fundedBy'],'PAŞA Bank '+card()['masked']);self.assertNotIn('cardChargeId',ct)
+        self.assertEqual(card()['balanceMinor'],start-4200-q['totalMinor']);self.assertEqual(self.a.balance(),wallet+3000)
+        for _ in range(40):
+            if self.a.send('card-transfers/'+ct['id'])['status']=='FAILED':break
+            time.sleep(0.5)
+        self.assertEqual(self.a.send('card-transfers/'+ct['id'])['status'],'FAILED')
+        self.assertEqual(card()['balanceMinor'],start-4200);self.assertEqual(self.a.balance(),wallet+3000)
         self.assertEqual(self.admin.send('admin/reconciliation/run',{})['differenceMinor'],0)
         # revoking stops further payments
         self.a.send('open-banking/consents/'+consent['id']+'/revoke',{})
