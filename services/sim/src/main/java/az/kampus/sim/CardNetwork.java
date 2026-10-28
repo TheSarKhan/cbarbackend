@@ -45,6 +45,17 @@ public class CardNetwork {
         sessions.put(id,new LinkedHashMap<>(Map.of("id",id,"nonce",UUID.randomUUID().toString(),"status","PENDING","expiresAt",System.currentTimeMillis()+900000)));
         persist();return Map.of("sessionId",id,"formPath","/card-form/"+id);
     }
+    /** A card typed straight into the wallet: the same checks and token as the hosted form, as an already completed session. */
+    @PostMapping("/cards/tokenize") synchronized Object tokenize(@RequestHeader("X-Api-Key")String key,@RequestBody Map<String,Object>b){
+        app.authorize(key);String pan=text(b,"pan");
+        if(!pan.matches("\\d{16}")||!luhn(pan))throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,"INVALID_PAN");
+        String id=UUID.randomUUID().toString(),bin=pan.substring(0,6);var s=new LinkedHashMap<String,Object>();
+        s.put("id",id);s.put("nonce",UUID.randomUUID().toString());s.put("expiresAt",System.currentTimeMillis()+900000);
+        s.put("cardToken","tok_"+UUID.randomUUID());s.put("bin",bin);s.put("last4",pan.substring(12));s.put("bankName",bankForBin(bin));s.put("brand",brandForPan(pan));
+        s.put("scenario",pan.equals("4000000000000002")?"DECLINED":pan.equals("4000000000009995")?"TIMEOUT":"APPROVED");s.put("status","COMPLETED");
+        sessions.put(id,s);persist();
+        return Map.of("sessionId",id,"bin",bin,"last4",s.get("last4"),"bankName",s.get("bankName"),"brand",s.get("brand"));
+    }
     @PostMapping("/cards/session-status") synchronized Object status(@RequestHeader("X-Api-Key")String key,@RequestBody Map<String,Object>b){
         app.authorize(key);var s=session(text(b,"sessionId"));
         if(!"COMPLETED".equals(s.get("status")))return Map.of("status","PENDING");

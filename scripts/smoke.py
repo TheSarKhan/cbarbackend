@@ -310,6 +310,14 @@ class Checks(unittest.TestCase):
         mine_qr=self.a.send('dashboard')['topupQrs'][0]
         self.assertEqual((mine_qr['totalMinor'],mine_qr['paidCount'],len(mine_qr['payments'])),(1700,2,2))
         self.b.send(path,{'amountMinor':100},status=403)
+    def test_39_typed_recipient_card_gets_a_quote(self):
+        self.a.send('card-transfers/card',{'number':'4169738855551235'},status=422)
+        self.a.send('card-transfers/card',{'number':'4169738855551234','cvv':'123'},status=422)
+        card=self.a.send('card-transfers/card',{'number':'4169 7388 5555 1234'})
+        self.assertEqual((card['last4'],card['bankName'],card['brand']),('1234','Kapital Bank','VISA'));self.assertNotIn('number',card)
+        quote=self.a.send('card-transfers/fee-quote',{'sessionId':card['sessionId'],'amountMinor':2000,'purpose':'P2P'})
+        self.assertEqual((quote['amountMinor'],quote['last4']),(2000,'1234'))
+        self.b.send('card-transfers/fee-quote',{'sessionId':card['sessionId'],'amountMinor':2000,'purpose':'P2P'},status=403)
     def test_26_logout_revokes_session(self):
         client=Client('+994501000002','logout-device')
         client.send('auth/logout',{})

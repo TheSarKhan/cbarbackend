@@ -19,6 +19,13 @@ public class CardTransfers {
             s.db.update("DELETE FROM records WHERE kind='RECIPIENT_CARD' AND id=?",card.get("id"));
             return m("deleted",true,"id",card.get("id"));
         }
+        if(path.equals("card-transfers/card")){
+            String number=str(b,"number").replaceAll("[ -]","");
+            Problem.require(b.keySet().equals(Set.of("number"))&&number.matches("\\d{16}")&&Engine.luhn(number),"INVALID_CARD","Kart nömrəsi yanlışdır.");
+            var remote=sim.call("/cards/tokenize",m("pan",number));
+            s.add("CARD_SESSION",u.id(),m("id",remote.get("sessionId"),"formPath",""));
+            return m("sessionId",remote.get("sessionId"),"bankName",remote.get("bankName"),"brand",remote.get("brand"),"last4",remote.get("last4"));
+        }
         Set<String> fields=path.equals("card-transfers/card-session")?Set.of():path.equals("card-transfers/fee-quote")?Set.of("sessionId","cardId","amountMinor","purpose"):Set.of("quoteId","amountMinor","totalMinor","recipientName","saveAs","isOwn");
         Problem.require(fields.containsAll(b.keySet()),"UNEXPECTED_FIELD","Kart nömrəsini yalnız mock kart formasına daxil edin.");
         if(path.equals("card-transfers/card-session")){
