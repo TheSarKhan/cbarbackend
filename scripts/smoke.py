@@ -324,8 +324,8 @@ class Checks(unittest.TestCase):
             qq=self.a.send('card-transfers/fee-quote',{'sessionId':self.a.send('card-transfers/card',{'number':'5222081122334452'})['sessionId'],'amountMinor':1000,'purpose':'SEND'})
             self.a.confirmed('card-transfers',{'quoteId':qq['id'],'amountMinor':qq['amountMinor'],'totalMinor':qq['totalMinor'],'recipientName':qq['bankName']+' · •••• '+qq['last4'],'saveAs':'PAŞA'})
         self.assertEqual(len([c for c in self.a.send('recipient-cards') if c['last4']=='4452']),1)
-    def anipay_send(self,amount,fin='5ABC123',phone='+994551234567'):
-        body={**self.a.tbody(phone,amount,'AniPay test'),'fin':fin}
+    def anipay_send(self,amount,who='+994551234567'):
+        body=self.a.tbody(who,amount,'AniPay test')
         t=self.a.confirmed('transfers',body)
         for _ in range(60):
             t=self.a.send('transfers/'+t['id'])
@@ -336,10 +336,10 @@ class Checks(unittest.TestCase):
         data=urllib.parse.urlencode(form).encode() if form is not None else None
         with urllib.request.urlopen(urllib.request.Request(SIM_BASE+path,data=data)) as r:return r.read().decode()
     def test_40_anipay_waits_for_the_recipient_bank_app(self):
-        self.a.send('transfers',{**self.a.tbody('+994551234567',1500),'fin':'bad'},status=422)
+        self.a.send('transfers/resolve?phone=not-a-recipient',status=404)
         before=self.a.balance()
         t=self.anipay_send(1500)
-        self.assertEqual(t['fin'],'5ABC123');self.assertEqual(self.a.balance(),before-1500)
+        self.assertEqual(self.a.balance(),before-1500)
         self.assertEqual(self.admin.send('admin/reconciliation/run',{})['differenceMinor'],0,'money in transit is still customers money')
         # the recipient opens AniPay in a bank that knows them: FİN and phone find the waiting transfer
         claim={'fin':'5ABC123','phone':'+994 55 123 45 67'}
@@ -367,8 +367,11 @@ class Checks(unittest.TestCase):
         self.assertEqual(self.admin.send('admin/reconciliation/run',{})['differenceMinor'],0)
     def test_41_unclaimed_anipay_comes_back(self):
         before=self.a.balance()
-        t=self.anipay_send(900,fin='9XYZ999',phone='+994709876543')
+        t=self.anipay_send(900,'9XYZ999')
         self.assertEqual(self.a.balance(),before-900)
+        # addressed by FİN, the transfer is found by the FİN whatever phone the recipient types
+        found=next(p for b in ('KAPITAL','ABB','PASHA','RABITA') for p in [self.bank_app('/bank-app/'+b+'/anipay',{'fin':'9XYZ999','phone':'+994 70 111 22 33'})] if 'transferId' in p)
+        self.assertIn('9.00',found)
         req=urllib.request.Request(SIM_BASE+'/anipay/demo-expire',data=json.dumps({'transferId':t['id']}).encode(),headers={'Content-Type':'application/json','X-Api-Key':'kampus-local-simulator-key'})
         with urllib.request.urlopen(req) as r:self.assertEqual(json.load(r)['status'],'EXPIRED')
         for _ in range(60):

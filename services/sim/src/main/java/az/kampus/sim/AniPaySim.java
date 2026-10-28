@@ -60,10 +60,11 @@ public class AniPaySim {
 
     @PostMapping("/anipay/transfers") synchronized Object submit(@RequestHeader("X-Api-Key")String key,@RequestBody Map<String,Object> b){
         app.authorize(key);
+        // the sender names the recipient by phone or by FİN, one of the two
         String id=text(b,"transferId"),fin=text(b,"fin").toUpperCase(Locale.ROOT),phone=phoneKey(text(b,"phone"));
         if(transfers.containsKey(id))return Map.of("status",transfers.get(id).get("status"),"reference",id);
         long a;try{a=new java.math.BigDecimal(b.get("amountMinor").toString()).longValueExact();}catch(Exception e){throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,"INVALID_AMOUNT");}
-        if(id.isBlank()||a<=0||!fin.matches(SHORT)||phone.isBlank())throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,"INVALID_TRANSFER");
+        if(id.isBlank()||a<=0||(fin.isBlank()==phone.isBlank())||(!fin.isBlank()&&!fin.matches(SHORT)))throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,"INVALID_TRANSFER");
         var t=new LinkedHashMap<String,Object>();
         t.put("transferId",id);t.put("fin",fin);t.put("phone",phone);t.put("amountMinor",a);t.put("senderName",text(b,"senderName"));
         t.put("status","PENDING");t.put("createdAt",System.currentTimeMillis());t.put("expiresAt",System.currentTimeMillis()+ttlMs);
@@ -137,7 +138,7 @@ public class AniPaySim {
     }
     String claimForm(Map<String,Object> bank,String error){
         String id=bank.get("id").toString();
-        return "<h1>AniPay ilə qəbul</h1><p class=\"lead\">Sizə köçürmə göndərilibsə, FİN kodunuzu və göndərənin yazdığı əlaqə nömrənizi daxil edin.</p>"
+        return "<h1>AniPay ilə qəbul</h1><p class=\"lead\">Sizə köçürmə göndərilibsə, FİN kodunuzu və əlaqə nömrənizi daxil edin. Köçürmə göndərənin yazdığı FİN və ya nömrə ilə tapılır.</p>"
             +(error.isBlank()?"":"<div class=\"err\">"+esc(error)+"</div>")
             +"<form method=\"post\" action=\"/bank-app/"+id+"/anipay\"><label>FİN kod</label><input type=\"text\" name=\"fin\" maxlength=\"7\" autocomplete=\"off\" autocapitalize=\"characters\" placeholder=\"5ABC123\" required>"
             +"<label>Əlaqə nömrəsi</label><input type=\"tel\" name=\"phone\" placeholder=\"+994 55 000 00 00\" required><button>İrəli</button></form>"+back("/bank-app/"+id,"Geri");
@@ -146,7 +147,7 @@ public class AniPaySim {
         var b=bankOf(bank);return html(shell(b,"AniPay",claimForm(b,"")));
     }
     List<Map<String,Object>> waiting(String fin,String phone){
-        return transfers.values().stream().filter(t->fin.equals(t.get("fin"))&&phone.equals(t.get("phone"))&&open(t)).toList();
+        return transfers.values().stream().filter(t->matches(t,fin,phone)&&open(t)).toList();
     }
     @PostMapping(value="/bank-app/{bank}/anipay",produces=MediaType.TEXT_HTML_VALUE) synchronized ResponseEntity<String> find(@PathVariable String bank,@RequestParam String fin,@RequestParam String phone){
         var b=bankOf(bank);String id=b.get("id").toString();fin=fin.trim().toUpperCase(Locale.ROOT);phone=phoneKey(phone);
@@ -163,9 +164,13 @@ public class AniPaySim {
         }
         return html(shell(b,"AniPay",sb.toString()));
     }
+    /** A transfer addressed by FİN is found by the FİN, one addressed by phone by the phone. */
+    static boolean matches(Map<String,Object> t,String fin,String phone){
+        return text(t,"fin").isBlank()?phone.equals(text(t,"phone")):fin.equals(text(t,"fin"));
+    }
     Map<String,Object> pendingFor(String transferId,String fin,String phone){
         var t=transfers.get(transferId);
-        if(t==null||!fin.equals(t.get("fin"))||!phone.equals(t.get("phone"))||!open(t))throw new ResponseStatusException(HttpStatus.GONE,"TRANSFER_NOT_AVAILABLE");
+        if(t==null||!matches(t,fin,phone)||!open(t))throw new ResponseStatusException(HttpStatus.GONE,"TRANSFER_NOT_AVAILABLE");
         return t;
     }
     @PostMapping(value="/bank-app/{bank}/anipay/accounts",produces=MediaType.TEXT_HTML_VALUE) synchronized ResponseEntity<String> accounts(@PathVariable String bank,@RequestParam String fin,@RequestParam String phone,@RequestParam String transferId){
