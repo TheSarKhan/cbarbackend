@@ -39,15 +39,24 @@ public class OpenBankingSim {
     @Value("${kampus.ob-state-file:.local/open-banking.json}") String stateFile;
     final SimApplication app;
     final Map<String,Map<String,Object>> consents=new LinkedHashMap<>();
+    /** Money that arrived on an account from outside the generated history (an AniPay transfer received in the bank app). */
+    final List<Map<String,Object>> credits=new ArrayList<>();
     OpenBankingSim(SimApplication app){this.app=app;}
 
     @jakarta.annotation.PostConstruct void load(){
         try{
             var path=java.nio.file.Path.of(stateFile);
-            if(java.nio.file.Files.exists(path))app.json.readTree(path.toFile()).path("consents").fields().forEachRemaining(e->{
-                @SuppressWarnings("unchecked") Map<String,Object> value=app.json.convertValue(e.getValue(),LinkedHashMap.class);
-                consents.put(e.getKey(),value);
-            });
+            if(java.nio.file.Files.exists(path)){
+                var root=app.json.readTree(path.toFile());
+                root.path("consents").fields().forEachRemaining(e->{
+                    @SuppressWarnings("unchecked") Map<String,Object> value=app.json.convertValue(e.getValue(),LinkedHashMap.class);
+                    consents.put(e.getKey(),value);
+                });
+                root.path("credits").forEach(e->{
+                    @SuppressWarnings("unchecked") Map<String,Object> value=app.json.convertValue(e,LinkedHashMap.class);
+                    credits.add(value);
+                });
+            }
         }catch(Exception ignored){}
     }
     void persist(){
@@ -55,7 +64,7 @@ public class OpenBankingSim {
             var path=java.nio.file.Path.of(stateFile).toAbsolutePath();
             java.nio.file.Files.createDirectories(path.getParent());
             var temp=path.resolveSibling(path.getFileName()+".tmp");
-            app.json.writeValue(temp.toFile(),Map.of("consents",consents));
+            app.json.writeValue(temp.toFile(),Map.of("consents",consents,"credits",credits));
             java.nio.file.Files.move(temp,path,java.nio.file.StandardCopyOption.REPLACE_EXISTING,java.nio.file.StandardCopyOption.ATOMIC_MOVE);
         }catch(Exception ignored){}
     }
@@ -147,7 +156,14 @@ public class OpenBankingSim {
     long balance(Account account,Instant now){
         long net=0;
         for(var t:transactions(account,now,ANCHOR)){long a=((Number)t.get("amountMinor")).longValue();net+="IN".equals(t.get("direction"))?a:-a;}
-        return Math.max(1_000,account.baseMinor()+net);
+        long received=0;
+        for(var c:credits)if(account.id().equals(c.get("accountId")))received+=((Number)c.get("amountMinor")).longValue();
+        return Math.max(1_000,account.baseMinor()+net)+received;
+    }
+    /** Books an incoming transfer on an account; it raises the balance and shows up in the account's history. */
+    synchronized void credit(String accountId,long amountMinor,String name){
+        credits.add(new LinkedHashMap<>(Map.of("id","cr-"+UUID.randomUUID().toString().substring(0,10),"accountId",accountId,"amountMinor",amountMinor,"name",name,"at",Instant.now().toString())));
+        persist();
     }
 
     // ---- consent lifecycle --------------------------------------------------
@@ -311,6 +327,8 @@ public class OpenBankingSim {
         for(var a:accounts(text(c,"bankId"),text(c,"userRef")))if(allowed.contains(a.id()))
             for(var t:history(a,now))if(!Instant.parse(t.get("bookedAt").toString()).isBefore(from))out.add(t);
         @SuppressWarnings("unchecked") var charges=(List<Map<String,Object>>)c.getOrDefault("charges",List.of());
+        for(var x:credits)if(allowed.contains(text(x,"accountId"))&&!Instant.parse(text(x,"at")).isBefore(from))
+            out.add(new LinkedHashMap<>(Map.of("id",text(x,"id"),"accountId",text(x,"accountId"),"bookedAt",text(x,"at"),"amountMinor",x.get("amountMinor"),"direction","IN","name",text(x,"name"),"mcc","0001","status","BOOKED")));
         for(var x:charges)if(!Boolean.TRUE.equals(x.get("reversed"))&&allowed.contains(text(x,"accountId"))&&!Instant.parse(text(x,"at")).isBefore(from))
             out.add(new LinkedHashMap<>(Map.of("id",text(x,"id"),"accountId",text(x,"accountId"),"bookedAt",text(x,"at"),"amountMinor",x.get("amountMinor"),"direction","OUT","name","Kampus: "+text(x,"reference"),"mcc","0001","status","BOOKED")));
         return Map.of("status","AUTHORIZED","transactions",out);

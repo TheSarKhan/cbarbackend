@@ -27,6 +27,7 @@ services:
    SIM_KEY: ${SIM_KEY:?Run scripts/deploy-init.py first}
    KAMPUS_CARD_STATE_FILE: /data/card-network.json
    KAMPUS_OB_STATE_FILE: /data/open-banking.json
+   KAMPUS_ANIPAY_STATE_FILE: /data/anipay.json
   volumes: [sim_data:/data]
   healthcheck:
    test: [CMD, curl, -fsS, 'http://localhost:8081/health']

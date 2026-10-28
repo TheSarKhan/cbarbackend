@@ -324,6 +324,59 @@ class Checks(unittest.TestCase):
             qq=self.a.send('card-transfers/fee-quote',{'sessionId':self.a.send('card-transfers/card',{'number':'5222081122334452'})['sessionId'],'amountMinor':1000,'purpose':'SEND'})
             self.a.confirmed('card-transfers',{'quoteId':qq['id'],'amountMinor':qq['amountMinor'],'totalMinor':qq['totalMinor'],'recipientName':qq['bankName']+' · •••• '+qq['last4'],'saveAs':'PAŞA'})
         self.assertEqual(len([c for c in self.a.send('recipient-cards') if c['last4']=='4452']),1)
+    def anipay_send(self,amount,fin='5ABC123',phone='+994551234567'):
+        body={**self.a.tbody(phone,amount,'AniPay test'),'fin':fin}
+        t=self.a.confirmed('transfers',body)
+        for _ in range(60):
+            t=self.a.send('transfers/'+t['id'])
+            if t['status']=='AWAITING_RECIPIENT':return t
+            time.sleep(.3)
+        self.fail('AniPay transfer never reached the recipient bank: '+t['status'])
+    def bank_app(self,path,form=None):
+        data=urllib.parse.urlencode(form).encode() if form is not None else None
+        with urllib.request.urlopen(urllib.request.Request(SIM_BASE+path,data=data)) as r:return r.read().decode()
+    def test_40_anipay_waits_for_the_recipient_bank_app(self):
+        self.a.send('transfers',{**self.a.tbody('+994551234567',1500),'fin':'bad'},status=422)
+        before=self.a.balance()
+        t=self.anipay_send(1500)
+        self.assertEqual(t['fin'],'5ABC123');self.assertEqual(self.a.balance(),before-1500)
+        self.assertEqual(self.admin.send('admin/reconciliation/run',{})['differenceMinor'],0,'money in transit is still customers money')
+        # the recipient opens AniPay in a bank that knows them: FİN and phone find the waiting transfer
+        claim={'fin':'5ABC123','phone':'+994 55 123 45 67'}
+        bank,page=next(((b,p) for b in ('KAPITAL','ABB','PASHA','RABITA') for p in [self.bank_app('/bank-app/'+b+'/anipay',claim)] if 'transferId' in p))
+        self.assertIn('15.00',page)
+        stranger=self.bank_app('/bank-app/'+bank+'/anipay',{'fin':'5ABC123','phone':'+994 55 999 99 99'})
+        self.assertNotIn('transferId',stranger)
+        transfer_id=re.search(r'name="transferId" value="([^"]+)"',page).group(1)
+        accounts=self.bank_app('/bank-app/'+bank+'/anipay/accounts',{**claim,'transferId':transfer_id})
+        account=re.search(r'name="accountId" value="([^"]+)"',accounts).group(1)
+        otp_page=self.bank_app('/bank-app/'+bank+'/anipay/otp',{**claim,'transferId':transfer_id,'accountId':account})
+        code=re.search(r'Demo kod: <b>(\d{6})',otp_page).group(1);otp_id=re.search(r'name="otpId" value="([^"]+)"',otp_page).group(1)
+        wrong=self.bank_app('/bank-app/'+bank+'/anipay/confirm',{'otpId':otp_id,'code':'000000' if code!='000000' else '111111'})
+        self.assertIn('Kod yanlışdır',wrong)
+        self.assertEqual(self.a.send('transfers/'+t['id'])['status'],'AWAITING_RECIPIENT')
+        done=self.bank_app('/bank-app/'+bank+'/anipay/confirm',{'otpId':otp_id,'code':code})
+        self.assertIn('qəbul edildi',done)
+        self.assertNotIn('transferId',self.bank_app('/bank-app/'+bank+'/anipay',claim),'a transfer is accepted once')
+        for _ in range(60):
+            if self.a.send('transfers/'+t['id'])['status']=='COMPLETED':break
+            time.sleep(.3)
+        final=self.a.send('transfers/'+t['id'])
+        self.assertEqual(final['status'],'COMPLETED');self.assertIn('•••',final['receivedTo'])
+        self.assertEqual(self.a.balance(),before-1500)
+        self.assertEqual(self.admin.send('admin/reconciliation/run',{})['differenceMinor'],0)
+    def test_41_unclaimed_anipay_comes_back(self):
+        before=self.a.balance()
+        t=self.anipay_send(900,fin='9XYZ999',phone='+994709876543')
+        self.assertEqual(self.a.balance(),before-900)
+        req=urllib.request.Request(SIM_BASE+'/anipay/demo-expire',data=json.dumps({'transferId':t['id']}).encode(),headers={'Content-Type':'application/json','X-Api-Key':'kampus-local-simulator-key'})
+        with urllib.request.urlopen(req) as r:self.assertEqual(json.load(r)['status'],'EXPIRED')
+        for _ in range(60):
+            if self.a.send('transfers/'+t['id'])['status']=='REFUNDED':break
+            time.sleep(.3)
+        self.assertEqual(self.a.send('transfers/'+t['id'])['status'],'REFUNDED')
+        self.assertEqual(self.a.balance(),before)
+        self.assertEqual(self.admin.send('admin/reconciliation/run',{})['differenceMinor'],0)
     def test_26_logout_revokes_session(self):
         client=Client('+994501000002','logout-device')
         client.send('auth/logout',{})
