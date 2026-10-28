@@ -283,6 +283,11 @@ class Checks(unittest.TestCase):
         self.assertEqual(self.a.balance(),before+700)
         saved=[c for c in self.a.send('dashboard')['savedCards'] if c['last4']=='1111']
         self.assertEqual(len(saved),1);self.assertNotIn('token',saved[0]);self.assertNotIn('number',saved[0])
+        added=self.a.confirmed('saved-cards',{'card':{**TEST_CARD,'number':'5555 5555 5555 4444'}})
+        self.assertEqual((added['brand'],added['last4']),('Mastercard','4444'));self.assertNotIn('token',added)
+        self.assertEqual(self.a.confirmed('saved-cards',{'card':{**TEST_CARD,'number':'5555 5555 5555 4444'}})['id'],added['id'],'the same card is kept once')
+        self.a.send('saved-cards',{'card':{**TEST_CARD,'number':'5555 5555 5555 4445'}},proof=self.a.sca('saved-cards',{'card':{**TEST_CARD,'number':'5555 5555 5555 4445'}}),status=422)
+        self.a.send('saved-cards/'+added['id']+'/delete',{})
         again={'amountMinor':300,'source':'SAVED_CARD','cardId':saved[0]['id']}
         self.a.confirmed('topups',again)
         self.assertEqual(self.a.balance(),before+1000)
