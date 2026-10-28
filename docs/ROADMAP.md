@@ -8,7 +8,7 @@ Bu sənəd bütün TT-nin tamamlandığını bildirmir. “İşləyir” lokal s
 
 - Ledger: ikili yazılış, balans, HOLD/CAPTURE/release, sorğu idempotency-si və qoruma hesabı ilə daxili üzləşdirmə.
 - Giriş: Argon2 PIN, cihaz identifikatoruna bağlı sessiya, vaxt limiti və üç səhv cəhddən sonra bloklama.
-- Balans: mock kart və açıq bankçılıq, 15 dəqiqəlik birdəfəlik terminal kodu.
+- Balans: kart (Luhn yoxlaması, tokenləşdirilib yadda saxlama, CVV saxlanmır), açıq bankçılıq kartı və təkrar istifadə olunan QR ilə artım.
 - Köçürmə: daxili P2P və AniPay mock-u, 5 saniyəlik ləğv, pul istə, bərabər/fərdi hesab bölmə.
 - Etibarlı alıcılar: PIN təsdiqi ilə əlavə etmə. Kontakt uyğunlaşdırması cihazda SHA-256 hesablayır; boş sorğu istifadəçiləri sıralamır.
 - QR/kassa: EMV TLV və CRC16, statik/dinamik QR, müddət və birdəfəlik istifadə, komissiya və geri qaytarma.

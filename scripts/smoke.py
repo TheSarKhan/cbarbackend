@@ -4,6 +4,7 @@ import socket, shutil, concurrent.futures, re, urllib.parse, hashlib, json, os, 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 BASE = 'http://127.0.0.1:18080/api/v1/'
 SIM_BASE = 'http://127.0.0.1:18081'
+TEST_CARD = {'number':'4111 1111 1111 1111','expiry':'12/39','cvv':'123'}
 class Client:
     def __init__(self, phone, device='demo-device', pin='123456'):
         self.device, self.token = device, ''
@@ -43,13 +44,13 @@ class Checks(unittest.TestCase):
         self.assertEqual(e.exception.code,401)
     def test_02_integer_amounts(self):
         for a in (0,-5,1.5,100000001):
-            self.a.send('topups',{'amountMinor':a,'source':'CARD'},status=422 if isinstance(a,int) else 400)
+            self.a.send('topups',{'amountMinor':a,'source':'NEW_CARD','card':TEST_CARD},status=422 if isinstance(a,int) else 400)
     def test_03_concurrent_idempotency(self):
-        before=self.a.balance();key=str(uuid.uuid4());body={'amountMinor':1234,'source':'CARD'}
+        before=self.a.balance();key=str(uuid.uuid4());body={'amountMinor':1234,'source':'NEW_CARD','card':TEST_CARD}
         with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
             replies=list(pool.map(lambda _:self.a.send('topups',body,key=key),range(6)))
         self.assertEqual(len({r['id'] for r in replies}),1);self.assertEqual(self.a.balance(),before+1234)
-        self.a.send('topups',{'amountMinor':1235,'source':'CARD'},key=key,status=422)
+        self.a.send('topups',{'amountMinor':1235,'source':'NEW_CARD','card':TEST_CARD},key=key,status=422)
     def test_04_transfer_cancellation_and_completion(self):
         before=self.a.balance();other=self.b.balance()
         t=self.a.send('transfers',self.a.tbody('+994501000002',1000,'pizza'))
@@ -245,13 +246,8 @@ class Checks(unittest.TestCase):
         self.assertEqual(base64.b64decode(photo['dataBase64']),selfie_bytes)
         self.assertEqual(photo['sha256'],hashlib.sha256(selfie_bytes).hexdigest())
         self.a.send('admin/kyc/'+reg['user']['id']+'/selfie',status=403)
-    def test_20_terminal_code_trusted_beneficiaries_and_hashed_contacts(self):
+    def test_20_trusted_beneficiaries_and_hashed_contacts(self):
         before=self.a.balance()
-        tc=self.a.send('topups/terminal-code',{'amountMinor':1500})
-        self.assertEqual(len(tc['code']),8)
-        self.a.send('topups/terminal-redeem',{'code':tc['code']})
-        self.assertEqual(self.a.balance(),before+1500)
-        self.a.send('topups/terminal-redeem',{'code':tc['code']},status=422)
         matched=self.a.send('contacts/match',{'phoneHashes':[hashlib.sha256(p.encode()).hexdigest() for p in ['+994501000002','+994509990000']]})
         self.assertTrue(any(m['phone']=='+994501000002' and len(m['phoneHash'])==64 for m in matched['matches']))
         tb=self.a.confirmed('trusted-beneficiaries',{'phone':'+994501000003','nickname':'Leyla'})
@@ -277,6 +273,38 @@ class Checks(unittest.TestCase):
         before=self.a.balance()
         self.a.send('topups',{'source':'BITCOIN','amountMinor':1000},status=422)
         self.assertEqual(self.a.balance(),before)
+    def test_38_card_top_up_saved_card_and_qr_top_up(self):
+        before=self.a.balance()
+        for card,code in (({**TEST_CARD,'number':'4111 1111 1111 1112'},422),({**TEST_CARD,'expiry':'01/20'},422),({**TEST_CARD,'cvv':'12'},422),({**TEST_CARD,'number':'4000 0000 0000 0002'},422)):
+            self.a.send('topups',{'amountMinor':500,'source':'NEW_CARD','card':card},status=code)
+        self.assertEqual(self.a.balance(),before)
+        body={'amountMinor':700,'source':'NEW_CARD','card':TEST_CARD,'saveCard':True}
+        self.a.confirmed('topups',body)
+        self.assertEqual(self.a.balance(),before+700)
+        saved=[c for c in self.a.send('dashboard')['savedCards'] if c['last4']=='1111']
+        self.assertEqual(len(saved),1);self.assertNotIn('token',saved[0]);self.assertNotIn('number',saved[0])
+        again={'amountMinor':300,'source':'SAVED_CARD','cardId':saved[0]['id']}
+        self.a.confirmed('topups',again)
+        self.assertEqual(self.a.balance(),before+1000)
+        stored=json.dumps(self.a.send('dashboard'))
+        self.assertNotIn('4111111111111111',stored.replace(' ',''));self.assertNotIn('"cvv"',stored)
+        self.b.send('saved-cards/'+saved[0]['id']+'/delete',{},status=403)
+        self.a.send('saved-cards/'+saved[0]['id']+'/delete',{})
+        self.assertFalse(self.a.send('dashboard')['savedCards'])
+        mine,theirs=self.a.balance(),self.b.balance()
+        qr=self.a.send('topups/qr',{})
+        self.assertTrue(qr['qrPayload'].startswith('kampus-topup:'))
+        self.assertEqual(self.a.send('topups/qr',{})['id'],qr['id'],'one reusable QR per customer')
+        self.assertEqual(self.b.send('topups/qr/'+qr['id'])['status'],'ACTIVE')
+        path='topups/qr/'+qr['id']+'/pay'
+        self.a.send(path,{'amountMinor':500},proof=self.a.sca(path,{'amountMinor':500}),status=422)
+        self.b.send(path,{'amountMinor':0},proof=self.b.sca(path,{'amountMinor':0}),status=422)
+        self.b.confirmed(path,{'amountMinor':1500})
+        self.b.confirmed(path,{'amountMinor':200})
+        self.assertEqual((self.a.balance(),self.b.balance()),(mine+1700,theirs-1700))
+        mine_qr=self.a.send('dashboard')['topupQrs'][0]
+        self.assertEqual((mine_qr['totalMinor'],mine_qr['paidCount'],len(mine_qr['payments'])),(1700,2,2))
+        self.b.send(path,{'amountMinor':100},status=403)
     def test_26_logout_revokes_session(self):
         client=Client('+994501000002','logout-device')
         client.send('auth/logout',{})
@@ -457,7 +485,7 @@ class Checks(unittest.TestCase):
     def test_30_large_payments_need_a_fresh_face_check(self):
         import base64
         selfie='data:image/jpeg;base64,'+base64.b64encode((pathlib.Path(__file__).resolve().parent/'fixtures'/'selfie.jpg').read_bytes()).decode()
-        self.a.send('topups',{'amountMinor':60000,'source':'CARD'})
+        [self.a.confirmed('topups',{'amountMinor':20000,'source':'NEW_CARD','card':TEST_CARD}) for _ in range(3)]
         before=self.a.balance()
         body=self.a.tbody('+994501000002',55000,'kyc step-up')
         # a PIN is required, even for a recipient the customer already trusts
@@ -489,7 +517,7 @@ class Checks(unittest.TestCase):
         # a face check is not offered for a proof that never needed one
         self.a.send('auth/sca/kyc',{**kyc,'proof':small['proof']},status=422)
         # a risky device does not skip the check: this transfer would go to manual review, and still needs PIN + face first
-        if self.a.balance()<60000:self.a.send('topups',{'amountMinor':60000,'source':'CARD'})
+        if self.a.balance()<60000:[self.a.confirmed('topups',{'amountMinor':20000,'source':'NEW_CARD','card':TEST_CARD}) for _ in range(3)]
         risky=None
         phone=Client('+994501000001',device='new-phone-kyc')
         risky=phone.tbody('+994501000002',56000,'kyc on a new device')
@@ -545,7 +573,7 @@ class Checks(unittest.TestCase):
         me=Client(phone,pin='4821')
         proof=lambda c:c.send('auth/sca',{'pin':'4821','payload':{'action':'account/delete','data':{}}})['proof']
         before=self.admin.send('admin/reconciliation/run',{})['differenceMinor']
-        me.send('topups',{'amountMinor':1000,'source':'CARD'})
+        me.send('topups',{'amountMinor':1000,'source':'NEW_CARD','card':TEST_CARD})
         # the demo accounts and the wrong PIN cannot delete anything
         self.a.send('account/delete',{},proof=self.a.sca('account/delete',{}),status=422)
         me.send('account/delete',{},status=403)

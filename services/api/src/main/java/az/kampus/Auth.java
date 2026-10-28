@@ -136,8 +136,8 @@ import static az.kampus.Store.*;
   s.db.update("UPDATE users SET failed_attempts=0 WHERE id=?",u.id);
   boolean kyc=needsKyc(b.get("payload"));
   var actions=new ArrayList<>(List.of("TURN_LEFT","TURN_RIGHT","BLINK","SMILE"));Collections.shuffle(actions);
-  var proof=s.add("SCA",u.id,m("payload",b.get("payload"),"expiresAt",System.currentTimeMillis()+(kyc?180_000:60_000),"used",false,"deviceId",u.device,"kycRequired",kyc,"kycDone",false,"kycActions",kyc?new ArrayList<>(actions.subList(0,3)):List.of()));
-  s.audit(u.id,"SCA_PIN_CONFIRMED",b.get("payload"));
+  var proof=s.add("SCA",u.id,m("payload",redact(b.get("payload")),"expiresAt",System.currentTimeMillis()+(kyc?180_000:60_000),"used",false,"deviceId",u.device,"kycRequired",kyc,"kycDone",false,"kycActions",kyc?new ArrayList<>(actions.subList(0,3)):List.of()));
+  s.audit(u.id,"SCA_PIN_CONFIRMED",redact(b.get("payload")));
   return kyc?m("proof",proof.get("id"),"kycRequired",true,"kycActions",proof.get("kycActions")):m("proof",proof.get("id"),"kycRequired",false);
  }
  /** Second factor for large amounts: a fresh liveness check. The selfie is kept encrypted as evidence for this payment. */
@@ -158,8 +158,15 @@ import static az.kampus.Store.*;
   return m("proof",p.get("id"),"kycDone",true);
  }
  int failure(String user){var r=s.db.queryForMap("SELECT failed_attempts FROM users WHERE id=?",user);int n=((Number)r.get("failed_attempts")).intValue()+1;s.db.update("UPDATE users SET failed_attempts=?,locked_until=? WHERE id=?",n,n>=3?System.currentTimeMillis()+1_800_000:0,user);if(n>=3){s.db.update("DELETE FROM sessions WHERE user_id=?",user);s.add("NOTIFICATION",user,m("title","Hesab bloklandı","body","3 səhv PIN cəhdi. Hesabınız 30 dəqiqəlik bloklandı.","read",false));s.audit(user,"PIN_LOCKOUT",m("attempts",n));}return Math.max(0,3-n);}
+ /** A typed card number and CVV must never be stored: the confirmation binds to the card's last four digits instead. */
+ static Object redact(Object payload){
+  if(!(payload instanceof Map<?,?> w&&w.get("data") instanceof Map<?,?> d&&d.get("card") instanceof Map<?,?> c))return payload;
+  var data=new LinkedHashMap<String,Object>();d.forEach((k,v)->data.put(k.toString(),v));
+  String n=Objects.toString(c.get("number"),"").replaceAll("[ -]","");data.put("card",m("last4",n.length()>=4?n.substring(n.length()-4):""));
+  var out=new LinkedHashMap<String,Object>();w.forEach((k,v)->out.put(k.toString(),v));out.put("data",data);return out;
+ }
  void requireSca(User u,String proof,String action,Map<String,Object> payload){if(proof==null||proof.isBlank())throw new Problem(403,"SCA_REQUIRED","Məbləğ və alanı PIN ilə təsdiqləyin.");
   var p=s.own("SCA",proof,u.id);Problem.require(!yes(p,"used")&&num(p,"expiresAt")>System.currentTimeMillis()&&str(p,"deviceId").equals(u.device),"SCA_EXPIRED","Təsdiqin vaxtı bitib.");
-  var expected=m("action",action,"data",payload);Problem.require(s.encode(p.get("payload")).equals(s.encode(expected)),"SCA_BINDING_MISMATCH","Təsdiq məbləğə və alana uyğun gəlmir.");if(needsKyc(expected)&&!yes(p,"kycDone"))throw new Problem(403,"KYC_REQUIRED","Böyük məbləğ üçün üzünüzü də təsdiqləyin.");p.put("used",true);s.save("SCA",p);for(var counter:s.list("EXEMPT_COUNTER",u.id)){counter.put("count",0);counter.put("sumMinor",0);s.save("EXEMPT_COUNTER",counter);}
+  var expected=m("action",action,"data",payload);Problem.require(s.encode(p.get("payload")).equals(s.encode(redact(expected))),"SCA_BINDING_MISMATCH","Təsdiq məbləğə və alana uyğun gəlmir.");if(needsKyc(expected)&&!yes(p,"kycDone"))throw new Problem(403,"KYC_REQUIRED","Böyük məbləğ üçün üzünüzü də təsdiqləyin.");p.put("used",true);s.save("SCA",p);for(var counter:s.list("EXEMPT_COUNTER",u.id)){counter.put("count",0);counter.put("sumMinor",0);s.save("EXEMPT_COUNTER",counter);}
  }
 }
