@@ -6,7 +6,7 @@ class OpenBankingTests {
   assertEquals("Yemək",OpenBanking.category("5411","OUT"));
   assertEquals("Yemək",OpenBanking.category("5814","OUT"));
   assertEquals("Nəqliyyat",OpenBanking.category("4121","OUT"));
-  assertEquals("Abunəliklər",OpenBanking.category("4899","OUT"));
+  assertEquals("Əyləncə",OpenBanking.category("4899","OUT"));
   assertEquals("Əyləncə",OpenBanking.category("7832","OUT"));
   assertEquals("Alış-veriş",OpenBanking.category("5651","OUT"));
   assertEquals("Kommunal",OpenBanking.category("4814","OUT"));

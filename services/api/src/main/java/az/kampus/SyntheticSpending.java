@@ -56,9 +56,9 @@ final class SyntheticSpending {
    if(!family.isAfter(today))txs.add(row(prefix+(n[0]++),at.apply(family,15),"INCOME","Ailədən köçürmə",8_000+rnd.nextInt(8)*500L,"IN","Gəlir"));
    // subscriptions: a fixed price on a fixed day
    record Fixed(String name,String category,int day,long minor,double jitter){}
-   var fixed=new ArrayList<>(List.of(new Fixed("Netflix","Abunəliklər",10,1299,0),new Fixed("Spotify","Abunəliklər",14,599,0),
+   var fixed=new ArrayList<>(List.of(new Fixed("Netflix","Əyləncə",10,1299,0),new Fixed("Spotify","Əyləncə",14,599,0),
     new Fixed("Azercell","Kommunal",8,1500,0.08),new Fixed("AzərSu","Kommunal",18,1000,0.12),new Fixed("Azərişıq","Kommunal",20,2200,0.2)));
-   if(youtube)fixed.add(new Fixed("YouTube Premium","Abunəliklər",3,799,0));
+   if(youtube)fixed.add(new Fixed("YouTube Premium","Əyləncə",3,799,0));
    for(var f:fixed){
     LocalDate d=month.withDayOfMonth(Math.min(f.day(),len));
     if(f.jitter()>0)d=d.plusDays(rnd.nextInt(3)-1);

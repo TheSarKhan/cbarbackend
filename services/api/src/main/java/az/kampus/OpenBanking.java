@@ -27,7 +27,7 @@ public class OpenBanking {
         if("IN".equals(direction))return "Gəlir";
         if(FOOD.contains(mcc))return "Yemək";
         if(TRANSPORT.contains(mcc))return "Nəqliyyat";
-        if(SUBSCRIPTIONS.contains(mcc))return "Abunəliklər";
+        if(SUBSCRIPTIONS.contains(mcc))return "Əyləncə";
         if(FUN.contains(mcc))return "Əyləncə";
         if(SHOPPING.contains(mcc))return "Alış-veriş";
         if(UTILITIES.contains(mcc))return "Kommunal";

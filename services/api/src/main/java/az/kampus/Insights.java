@@ -114,7 +114,7 @@ final class Insights {
    var amounts=new ArrayList<>(perDay.values());
    double typical=median(amounts);
    String category=e.getValue().get(0).category();
-   boolean bill=Set.of("Kommunal","Abunəliklər").contains(category);
+   boolean bill="Kommunal".equals(category);
    double amountTol=bill?0.35:0.12;
    double amountIrr=typical<=0?9:(mad(amounts)/typical)/amountTol;
    if(gapIrr>1||amountIrr>1||typical<100)continue;

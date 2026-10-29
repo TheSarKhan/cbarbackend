@@ -56,7 +56,7 @@ def test_ordinary_spending_raises_few_alarms():
 
 
 def test_a_monthly_subscription_is_recurring():
-    txs = history() + [make(f"2026-{m:02d}-10", 9, "Netflix", 1299, "Abunəliklər") for m in range(5, 11)]
+    txs = history() + [make(f"2026-{m:02d}-10", 9, "Netflix", 1299, "Əyləncə") for m in range(5, 11)]
     found = {r["key"]: r for r in recurring(spending_frame(txs), NOW)}
     assert "NETFLIX" in found and found["NETFLIX"]["period"] == "MONTHLY" and found["NETFLIX"]["typical"] == 1299
 
