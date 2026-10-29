@@ -122,10 +122,10 @@ class Checks(unittest.TestCase):
             if t['status']==status:return t
             time.sleep(.15)
         self.fail('Card transfer did not reach '+status+': '+str(t))
-    def test_15_card_transfer_approval_and_fee(self):
+    def test_15_card_transfer_approval_without_fee(self):
         session=self.demo_card('4242424242424242')
         quote=self.a.send('card-transfers/fee-quote',{'sessionId':session['id'],'amountMinor':2000})
-        self.assertEqual(quote['feeMinor'],30);self.assertEqual(quote['totalMinor'],2030)
+        self.assertEqual(quote['feeMinor'],0);self.assertEqual(quote['totalMinor'],2000)
         body={'quoteId':quote['id'],'amountMinor':2000}
         self.a.send('card-transfers',{**body,'pan':'4242424242424242'},status=422)
         self.a.send('card-transfers',body,status=403)
@@ -133,22 +133,22 @@ class Checks(unittest.TestCase):
         before=self.a.balance();key=str(uuid.uuid4());proof=self.a.sca('card-transfers',body)
         t=self.a.send('card-transfers',body,key=key,proof=proof)
         again=self.a.send('card-transfers',body,key=key,proof=proof)
-        self.assertEqual(t['id'],again['id']);self.assertEqual(self.a.balance(),before-2030)
+        self.assertEqual(t['id'],again['id']);self.assertEqual(self.a.balance(),before-2000)
         done=self.wait_card(t['id'],'COMPLETED')
-        self.assertEqual(self.a.balance(),before-2030);self.assertNotIn('cardToken',done)
+        self.assertEqual(self.a.balance(),before-2000);self.assertNotIn('cardToken',done)
         self.a.send('card-transfers',body,status=422)
         self.assertEqual(self.admin.send('admin/reconciliation/run',{})['differenceMinor'],0)
     def test_16_card_transfer_decline_releases_hold(self):
         session=self.demo_card('4000000000000002')
         q=self.a.send('card-transfers/fee-quote',{'sessionId':session['id'],'amountMinor':1000})
         before=self.a.balance();t=self.a.confirmed('card-transfers',{'quoteId':q['id'],'amountMinor':1000})
-        self.assertEqual(self.a.balance(),before-1030)
+        self.assertEqual(self.a.balance(),before-1000)
         self.wait_card(t['id'],'FAILED');self.assertEqual(self.a.balance(),before)
     def test_16b_card_transfer_can_be_cancelled_in_five_seconds(self):
         session=self.demo_card('4242424242424242')
         q=self.a.send('card-transfers/fee-quote',{'sessionId':session['id'],'amountMinor':1000})
         before=self.a.balance();t=self.a.confirmed('card-transfers',{'quoteId':q['id'],'amountMinor':1000})
-        self.assertEqual(t['status'],'SCHEDULED');self.assertEqual(self.a.balance(),before-1030)
+        self.assertEqual(t['status'],'SCHEDULED');self.assertEqual(self.a.balance(),before-1000)
         self.assertEqual(self.a.send('card-transfers/'+t['id']+'/cancel',{})['status'],'CANCELLED')
         self.assertEqual(self.a.balance(),before)
         self.a.send('card-transfers/'+t['id']+'/cancel',{},status=422)
@@ -157,7 +157,7 @@ class Checks(unittest.TestCase):
         q=self.a.send('card-transfers/fee-quote',{'sessionId':session['id'],'amountMinor':1500})
         before=self.a.balance();t=self.a.confirmed('card-transfers',{'quoteId':q['id'],'amountMinor':1500})
         self.wait_card(t['id'],'UNDER_REVIEW')
-        self.assertEqual(self.a.balance(),before-1530)
+        self.assertEqual(self.a.balance(),before-1500)
         path='admin/card-transfers/'+t['id']+'/resolve'
         self.compliance.send(path,{'decision':'DECLINED'},status=403)
         self.admin.send(path,{'decision':'DECLINED'})
@@ -165,7 +165,7 @@ class Checks(unittest.TestCase):
     def test_18_card_transfer_saved_card_and_own_withdrawal(self):
         session=self.demo_card('4169738855551234')
         q=self.a.send('card-transfers/fee-quote',{'sessionId':session['id'],'amountMinor':1000,'purpose':'SEND'})
-        self.assertEqual(q['bankName'],'Kapital Bank');self.assertEqual(q['brand'],'VISA');self.assertEqual(q['feeMinor'],30)
+        self.assertEqual(q['bankName'],'Kapital Bank');self.assertEqual(q['brand'],'VISA');self.assertEqual(q['feeMinor'],0)
         t=self.a.confirmed('card-transfers',{'quoteId':q['id'],'amountMinor':1000,'saveAs':'Kapital Maaş'})
         self.wait_card(t['id'],'COMPLETED')
         cards=self.a.send('recipient-cards')

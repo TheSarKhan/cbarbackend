@@ -55,11 +55,8 @@ public class CardTransfers {
                 Problem.require(str(card,"status").equals("COMPLETED"),"CARD_NOT_READY","Demo kart formasını tamamlayın.");
             }
             boolean own="WITHDRAW_OWN".equals(str(b,"purpose"))||yes(card,"isOwn")&&!"P2P".equals(str(b,"purpose"));
-            String month=java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString().substring(0,7);
-            long usedOwn=own?s.list("CARD_TRANSFER",u.id()).stream().filter(t->"WITHDRAW_OWN".equals(str(t,"purpose"))&&!"FAILED".equals(str(t,"status"))&&str(t,"createdAt").startsWith(month)).mapToLong(t->num(t,"amountMinor")).sum():0;
-            long freeRemaining=own?Math.max(0,50_000-usedOwn):0;
-            long chargeable=own?Math.max(0,a-freeRemaining):a;
-            long fee=chargeable==0?0:Math.max(30,(chargeable*50+5000)/10000);
+            // card transfers carry no commission
+            long fee=0;
             return s.add("CARD_QUOTE",u.id(),m("amountMinor",a,"feeMinor",fee,"totalMinor",a+fee,"purpose",own?"WITHDRAW_OWN":"P2P","cardToken",card.get("cardToken"),"bin",card.getOrDefault("bin","424242"),"last4",card.get("last4"),"bankName",card.get("bankName"),"brand",card.getOrDefault("brand","VISA"),"expiresAt",System.currentTimeMillis()+120000,"used",false));
         }
         if(path.equals("card-transfers")){
