@@ -45,6 +45,8 @@ final class Insights {
   try{amount=num(t,"amountMinor");at=Instant.parse(str(t,"createdAt"));}catch(RuntimeException e){return;}
   if(amount<=0)return;
   String name=str(t,"name"),category=str(t,"category");
+  // the wallet has no subscriptions category: older records filed streaming services there
+  if(category.equals("Abunəliklər"))category="Əyləncə";
   out.add(new Spend(str(t,"id"),at,amount,category.isBlank()?"Digər":category,name,key(name),str(t,"type"),source));
  }
 
