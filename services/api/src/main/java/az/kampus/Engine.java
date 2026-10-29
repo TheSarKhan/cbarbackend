@@ -61,10 +61,14 @@ import static az.kampus.Store.*;
   s.db.update("DELETE FROM payment_tokens WHERE user_id=?",uid);
   s.db.update("DELETE FROM kyc_media WHERE user_id=?",uid);
   s.db.update("DELETE FROM idempotency WHERE user_id=?",uid);
+  for(var f:s.list("FRIEND",null))if(uid.equals(str(f,"friendId")))s.db.update("DELETE FROM records WHERE kind='FRIEND' AND id=?",f.get("id"));
   s.db.update("DELETE FROM records WHERE owner_id=? OR (kind='OTP' AND owner_id=?)",uid,u.phone());
   s.db.update("DELETE FROM users WHERE id=?",uid);
   return m("deleted",true);
  }
+ /** A friend as the other person sees them: enough to send money, nothing else. */
+ Map<String,Object> friendView(String userId){var r=s.db.queryForMap("SELECT id,name,phone,avatar FROM users WHERE id=?",userId);return m("id",r.get("id"),"name",r.get("name"),"phone",r.get("phone"),"avatar",r.get("avatar"));}
+ List<Map<String,Object>> friends(String uid){var out=new ArrayList<Map<String,Object>>();for(var f:s.list("FRIEND",uid)){try{var v=new LinkedHashMap<>(friendView(str(f,"friendId")));v.put("since",f.get("createdAt"));out.add(v);}catch(RuntimeException gone){/* the friend deleted the account */}}return out;}
  /** The sender's note travels with the transaction, so the recipient sees it too. */
  void withNote(Map<String,Object> row,String note){if(!note.isBlank()){row.put("note",note);s.save("TX",row);}}
  boolean isBlacklisted(String phone){return s.list("BLACKLIST",null).stream().anyMatch(x->phone.equals(str(x,"target")));}
@@ -151,6 +155,24 @@ import static az.kampus.Store.*;
    if(parts[1].equals("verify")&&!yes(r,"verified")){Problem.require(num(r,"attemptsLeft")>0,"OTP_LOCKED","Kod 3 dəfə yanlış daxil edildi. Yenidən başlayın.");throw new Problem(422,"OTP_INVALID","Kod yanlışdır. "+r.get("attemptsLeft")+" cəhd qalıb.");}
    Problem.require(!(parts[1].equals("accept")&&str(r,"status").equals("UNAVAILABLE")),"TRANSFER_UNAVAILABLE","Bu köçürmə artıq qəbul edilib və ya vaxtı bitib.");
    return r;
+  }
+  // Kampus friends: a static personal QR; whoever scans it becomes a friend, and so does the owner.
+  if(p.equals("friends/qr")){var mine=s.list("FRIEND_QR",uid);if(!mine.isEmpty())return mine.getFirst();String qid=id();return s.add("FRIEND_QR",uid,m("id",qid,"qrPayload","kampus-friend:"+qid));}
+  if(p.equals("friends/add")){
+   Problem.require(b.keySet().equals(Set.of("qrId")),"UNEXPECTED_FIELD","Yanlış sorğu.");
+   String qid=str(b,"qrId");s.get("FRIEND_QR",qid);String owner=s.db.queryForObject("SELECT owner_id FROM records WHERE kind='FRIEND_QR' AND id=?",String.class,qid);
+   Problem.require(!owner.equals(uid),"SELF_FRIEND","Öz QR kodunuzu oxuda bilməzsiniz.");
+   if(s.list("FRIEND",uid).stream().noneMatch(f->owner.equals(str(f,"friendId")))){
+    s.add("FRIEND",uid,m("friendId",owner));s.add("FRIEND",owner,m("friendId",uid));
+    notify(owner,"Yeni Kampus dostu",u.name()+" ilə indi dostsunuz.");
+   }
+   return friendView(owner);
+  }
+  if(p.matches("friends/[^/]+/remove")){
+   String other=parts[1];Problem.require(s.list("FRIEND",uid).stream().anyMatch(f->other.equals(str(f,"friendId"))),"NOT_FOUND","Dost tapılmadı.");
+   for(var f:s.list("FRIEND",uid))if(other.equals(str(f,"friendId")))s.db.update("DELETE FROM records WHERE kind='FRIEND' AND id=?",f.get("id"));
+   for(var f:s.list("FRIEND",other))if(uid.equals(str(f,"friendId")))s.db.update("DELETE FROM records WHERE kind='FRIEND' AND id=?",f.get("id"));
+   return m("removed",true,"id",other);
   }
   if(p.equals("transfers")){
    long a=amount(b);Problem.require(a<=100_000,"TRANSFER_LIMIT","Bir köçürmə maksimum 1 000 AZN-dir.");var to=resolve(str(b,"phone"));Problem.require(!uid.equals(to.get("recipientId")),"SELF_TRANSFER","Özünüzə göndərə bilməzsiniz.");
@@ -260,7 +282,7 @@ import static az.kampus.Store.*;
   if(p.startsWith("open-banking/"))return openBanking.read(u,p);
   return switch(p){
    case "wallet" -> l.wallet(uid);
-   case "dashboard" -> m("user",auth.publicUser(u),"wallet",l.wallet(uid),"transactions",customerTransactions(uid),"transfers",publicTransfers(uid),"trustedBeneficiaries",s.list("TRUSTED_BENEFICIARY",uid),"savedCards",s.list("SAVED_CARD",uid).stream().map(c->{var r=new LinkedHashMap<>(c);r.remove("token");return r;}).toList(),"topupQrs",s.list("TOPUP_QR",uid),"notifications",s.list("NOTIFICATION",uid),"requests",s.list("REQUEST",uid),"bnplLoans",s.list("BNPL",uid),"partnerLoans",s.list("PARTNER_LOAN",uid),"applications",s.list("APPLICATION",uid),"offers",s.list("OFFER",uid),"bnplEligibility",creditPolicy.eligibility(uid),"bnplAvailableMinor",creditPolicy.eligibility(uid).get("availableMinor"),"analytics",analytics(uid),"insightsBrief",insights.brief(uid),"openBanking",openBanking.overview(uid),"budgets",s.list("BUDGET",uid),"splits",s.list("SPLIT",uid),"cardTransfers",s.list("CARD_TRANSFER",uid).stream().map(cardTransfers::publicTransfer).toList(),"recipientCards",cardTransfers.read(u,"recipient-cards"));
+   case "dashboard" -> m("user",auth.publicUser(u),"wallet",l.wallet(uid),"transactions",customerTransactions(uid),"transfers",publicTransfers(uid),"trustedBeneficiaries",s.list("TRUSTED_BENEFICIARY",uid),"friends",friends(uid),"savedCards",s.list("SAVED_CARD",uid).stream().map(c->{var r=new LinkedHashMap<>(c);r.remove("token");return r;}).toList(),"topupQrs",s.list("TOPUP_QR",uid),"notifications",s.list("NOTIFICATION",uid),"requests",s.list("REQUEST",uid),"bnplLoans",s.list("BNPL",uid),"partnerLoans",s.list("PARTNER_LOAN",uid),"applications",s.list("APPLICATION",uid),"offers",s.list("OFFER",uid),"bnplEligibility",creditPolicy.eligibility(uid),"bnplAvailableMinor",creditPolicy.eligibility(uid).get("availableMinor"),"analytics",analytics(uid),"insightsBrief",insights.brief(uid),"openBanking",openBanking.overview(uid),"budgets",s.list("BUDGET",uid),"splits",s.list("SPLIT",uid),"cardTransfers",s.list("CARD_TRANSFER",uid).stream().map(cardTransfers::publicTransfer).toList(),"recipientCards",cardTransfers.read(u,"recipient-cards"));
    case "transactions" -> customerTransactions(uid);
    case "trusted-beneficiaries" -> s.list("TRUSTED_BENEFICIARY",uid);
    case "notifications" -> s.list("NOTIFICATION",uid);
@@ -271,7 +293,7 @@ import static az.kampus.Store.*;
    case "budgets" -> s.list("BUDGET",uid);
    case "analytics/summary" -> analytics(uid);
    case "analytics/insights" -> insights.view(u,this::notify);
-   default -> {String[] parts=p.split("/");if(p.matches("topups/qr/[^/]+")){var q=s.get("TOPUP_QR",parts[2]);yield m("id",q.get("id"),"requesterName",q.get("requesterName"),"status","ACTIVE");}if(p.matches("loan-applications/[^/]+/offers")){s.own("APPLICATION",parts[1],uid);yield s.list("OFFER",uid).stream().filter(o->str(o,"applicationId").equals(parts[1])).toList();}if(p.matches("partner-loans/[^/]+/schedule")){s.own("PARTNER_LOAN",parts[1],uid);yield s.list("INSTALLMENT",uid).stream().filter(x->str(x,"loanId").equals(parts[1])).sorted(java.util.Comparator.comparingLong(x->num(x,"number"))).toList();}if(p.matches("splits/[^/]+")){var split=s.own("SPLIT",parts[1],uid);var requests=s.list("REQUEST",null).stream().filter(x->str(x,"splitId").equals(parts[1])).toList();split.put("requests",requests);split.put("paidCount",1+requests.stream().filter(x->str(x,"status").equals("PAID")).count());split.put("paidMinor",num(split,"organizerShareMinor")+requests.stream().filter(x->str(x,"status").equals("PAID")).mapToLong(x->num(x,"amountMinor")).sum());yield split;}if(p.matches("transfers/[^/]+"))yield publicTransfer(s.own("TRANSFER",parts[1],uid));throw new Problem(404,"NOT_FOUND","Səhifə tapılmadı.");}
+   default -> {String[] parts=p.split("/");if(p.matches("friends/qr/[^/]+")){var q=s.get("FRIEND_QR",parts[2]);String owner=s.db.queryForObject("SELECT owner_id FROM records WHERE kind='FRIEND_QR' AND id=?",String.class,parts[2]);var v=friendView(owner);yield m("id",q.get("id"),"name",v.get("name"),"avatar",v.get("avatar"),"self",owner.equals(uid),"alreadyFriend",s.list("FRIEND",uid).stream().anyMatch(f->owner.equals(str(f,"friendId"))));}if(p.matches("topups/qr/[^/]+")){var q=s.get("TOPUP_QR",parts[2]);yield m("id",q.get("id"),"requesterName",q.get("requesterName"),"status","ACTIVE");}if(p.matches("loan-applications/[^/]+/offers")){s.own("APPLICATION",parts[1],uid);yield s.list("OFFER",uid).stream().filter(o->str(o,"applicationId").equals(parts[1])).toList();}if(p.matches("partner-loans/[^/]+/schedule")){s.own("PARTNER_LOAN",parts[1],uid);yield s.list("INSTALLMENT",uid).stream().filter(x->str(x,"loanId").equals(parts[1])).sorted(java.util.Comparator.comparingLong(x->num(x,"number"))).toList();}if(p.matches("splits/[^/]+")){var split=s.own("SPLIT",parts[1],uid);var requests=s.list("REQUEST",null).stream().filter(x->str(x,"splitId").equals(parts[1])).toList();split.put("requests",requests);split.put("paidCount",1+requests.stream().filter(x->str(x,"status").equals("PAID")).count());split.put("paidMinor",num(split,"organizerShareMinor")+requests.stream().filter(x->str(x,"status").equals("PAID")).mapToLong(x->num(x,"amountMinor")).sum());yield split;}if(p.matches("transfers/[^/]+"))yield publicTransfer(s.own("TRANSFER",parts[1],uid));throw new Problem(404,"NOT_FOUND","Səhifə tapılmadı.");}
   };
  }
  Map<String,Object> fraudMetrics(){long totalTx=Math.max(1,s.list("TX",null).size()),fraudCount=s.list("FRAUD",null).size();return m("traFraudRate",null,"calculationStatus","NOT_IMPLEMENTED","traActive",false,"openCases",s.list("FRAUD",null).stream().filter(x->"OPEN".equals(str(x,"status"))).count(),"totalCases",fraudCount,"monitoredTxCount",totalTx);}
