@@ -26,6 +26,18 @@ public class CardTransfers {
             s.add("CARD_SESSION",u.id(),m("id",remote.get("sessionId"),"formPath",""));
             return m("sessionId",remote.get("sessionId"),"bankName",remote.get("bankName"),"brand",remote.get("brand"),"last4",remote.get("last4"));
         }
+        if(path.matches("card-transfers/[^/]+/cancel")){
+            var t=s.own("CARD_TRANSFER",path.split("/")[1],u.id());
+            Problem.require("SCHEDULED".equals(str(t,"status"))&&num(t,"executeAt")>System.currentTimeMillis(),"CANNOT_CANCEL","Ləğv etmə müddəti bitib.");
+            long total=num(t,"amountMinor")+num(t,"feeMinor");
+            l.release(str(t,"holdId"));
+            // money that came from a shared bank card goes back to that card, not into the wallet
+            if(!str(t,"cardChargeId").isBlank()&&openBanking.refundCharge(u.id(),str(t,"cardConsentRef"),str(t,"cardChargeId"),str(t,"cardAccountId"),total)){
+                l.post("BANK_CARD_REFUND","Bank kartına qaytarma","wallet:"+u.id(),"CUSTOMER_FUNDS_BANK",total);t.put("returnedToCard",true);
+            }
+            t.put("status","CANCELLED");s.save("CARD_TRANSFER",t);s.audit(u.id(),"CARD_TRANSFER_CANCELLED",publicTransfer(t));
+            return publicTransfer(t);
+        }
         Set<String> fields=path.equals("card-transfers/card-session")?Set.of():path.equals("card-transfers/fee-quote")?Set.of("sessionId","cardId","amountMinor","purpose"):Set.of("quoteId","amountMinor","totalMinor","recipientName","saveAs","isOwn","fundingAccountId");
         Problem.require(fields.containsAll(b.keySet()),"UNEXPECTED_FIELD","Kart nömrəsini yalnız mock kart formasına daxil edin.");
         if(path.equals("card-transfers/card-session")){
@@ -65,7 +77,7 @@ public class CardTransfers {
             String funding=str(b,"fundingAccountId");Map<String,Object> charge=m();
             if(!funding.isBlank()){charge=openBanking.charge(u.id(),funding,total,"Karta köçürmə");l.post("BANK_CARD_FUNDING","Bank kartından maliyyələşmə","CUSTOMER_FUNDS_BANK","wallet:"+u.id(),total);}
             String hold=l.hold("wallet:"+u.id(),total);
-            var t=s.add("CARD_TRANSFER",u.id(),m("userId",u.id(),"amountMinor",q.get("amountMinor"),"feeMinor",q.get("feeMinor"),"totalMinor",total,"purpose",q.getOrDefault("purpose","P2P"),"bin",q.getOrDefault("bin","424242"),"last4",q.get("last4"),"bankName",q.get("bankName"),"brand",q.getOrDefault("brand","VISA"),"cardToken",q.get("cardToken"),"holdId",hold,"status","HELD","deadlineAt",System.currentTimeMillis()+reviewAfter,"reviewExpiresAt",System.currentTimeMillis()+1800000));
+            var t=s.add("CARD_TRANSFER",u.id(),m("userId",u.id(),"amountMinor",q.get("amountMinor"),"feeMinor",q.get("feeMinor"),"totalMinor",total,"purpose",q.getOrDefault("purpose","P2P"),"bin",q.getOrDefault("bin","424242"),"last4",q.get("last4"),"bankName",q.get("bankName"),"brand",q.getOrDefault("brand","VISA"),"cardToken",q.get("cardToken"),"holdId",hold,"status","SCHEDULED","executeAt",System.currentTimeMillis()+5000,"deadlineAt",System.currentTimeMillis()+5000+reviewAfter,"reviewExpiresAt",System.currentTimeMillis()+1800000));
             if(!funding.isBlank()){t.put("fundedBy",charge.get("cardLabel"));t.put("cardChargeId",charge.get("chargeId"));t.put("cardConsentRef",charge.get("simConsentId"));t.put("cardAccountId",charge.get("accountId"));s.save("CARD_TRANSFER",t);}
             q.put("used",true);s.save("CARD_QUOTE",q);return publicTransfer(t);
         }
@@ -106,6 +118,7 @@ public class CardTransfers {
         s.lock();
         for(var t:s.list("CARD_TRANSFER",null)){
             String status=str(t,"status");
+            if(status.equals("SCHEDULED")&&num(t,"executeAt")<=System.currentTimeMillis()){t.put("status","HELD");s.save("CARD_TRANSFER",t);status="HELD";}
             if(!Set.of("HELD","SENT","UNDER_REVIEW").contains(status))continue;
             if(t.containsKey("nextPollAt")&&num(t,"nextPollAt")>System.currentTimeMillis())continue;
             String decision="UNKNOWN";

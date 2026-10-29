@@ -144,6 +144,14 @@ class Checks(unittest.TestCase):
         before=self.a.balance();t=self.a.confirmed('card-transfers',{'quoteId':q['id'],'amountMinor':1000})
         self.assertEqual(self.a.balance(),before-1030)
         self.wait_card(t['id'],'FAILED');self.assertEqual(self.a.balance(),before)
+    def test_16b_card_transfer_can_be_cancelled_in_five_seconds(self):
+        session=self.demo_card('4242424242424242')
+        q=self.a.send('card-transfers/fee-quote',{'sessionId':session['id'],'amountMinor':1000})
+        before=self.a.balance();t=self.a.confirmed('card-transfers',{'quoteId':q['id'],'amountMinor':1000})
+        self.assertEqual(t['status'],'SCHEDULED');self.assertEqual(self.a.balance(),before-1030)
+        self.assertEqual(self.a.send('card-transfers/'+t['id']+'/cancel',{})['status'],'CANCELLED')
+        self.assertEqual(self.a.balance(),before)
+        self.a.send('card-transfers/'+t['id']+'/cancel',{},status=422)
     def test_17_card_transfer_unknown_is_not_refunded_early(self):
         session=self.demo_card('4000000000009995')
         q=self.a.send('card-transfers/fee-quote',{'sessionId':session['id'],'amountMinor':1500})
