@@ -26,6 +26,12 @@ import static az.kampus.Store.*;
   return row;
  }
  void payout(String debit,long amount){l.post("SETTLEMENT","Demo bank hesablaşması",debit,"CUSTOMER_FUNDS_BANK",amount);}
+ /** An AniPay recipient exists only once they chose a receiving card or account in their bank app. */
+ Map<String,Object> aniPayRecipient(String identifier,boolean isFin){
+  var r=sim.call("/anipay/lookup",isFin?m("fin",identifier):m("phone",identifier));
+  if(!yes(r,"registered"))throw new Problem(404,"RECIPIENT_NOT_FOUND","Bu "+(isFin?"FİN kod":"nömrə")+" AniPay-də qeydiyyatdan keçməyib. Alıcı öz bank proqramında AniPay-ə qoşulmalıdır.");
+  return m("channel","ANIPAY","recipientId","ANIPAY_SETTLEMENT","maskedName",r.get("bankName")+" müştərisi","bankName",r.get("bankName"),"phone",identifier);
+ }
  Map<String,Object> resolve(String phone){
   phone=phone.trim().toUpperCase(Locale.ROOT);
   if(phone.matches("[A-Z0-9]{7}")){
@@ -38,10 +44,10 @@ import static az.kampus.Store.*;
   }
   var u=s.db.queryForList("SELECT id,name,avatar FROM users WHERE phone=? AND role='USER'",phone);
   if(!u.isEmpty()){var r=u.getFirst();return m("channel","INTERNAL","recipientId",r.get("id"),"maskedName",r.get("name"),"phone",phone,"avatar",r.get("avatar"),"recipientPhone",phone);}
-  // any other bank customer is reached through AniPay: the recipient's FİN travels beside the phone number
-  if(phone.matches("\\+994(50|51|55|60|70|77|99|10)[0-9]{7}"))return m("channel","ANIPAY","recipientId","ANIPAY_SETTLEMENT","maskedName","AniPay alıcısı","bankName","Digər bank","phone",phone);
+  // any other bank customer is reached through AniPay, if they have set it up in their bank app
+  if(phone.matches("\\+994(50|51|55|60|70|77|99|10)[0-9]{7}"))return aniPayRecipient(phone,false);
   // AniPay also takes the recipient's FİN instead of the phone
-  if(phone.matches("[A-Z0-9]{7}"))return m("channel","ANIPAY","recipientId","ANIPAY_SETTLEMENT","maskedName","AniPay alıcısı","bankName","Digər bank","phone",phone,"fin",phone.substring(0,2)+"***"+phone.substring(5));
+  if(phone.matches("[A-Z0-9]{7}"))return aniPayRecipient(phone,true);
   throw new Problem(404,"RECIPIENT_NOT_FOUND","Nömrə və ya FİN kod Kampus və AniPay kataloqunda yoxdur.");
  }
  /**
@@ -145,15 +151,14 @@ import static az.kampus.Store.*;
    }
    return m("matches",matches);
   }
-  // The recipient's bank app, simulated: FİN and phone, an SMS code, then the account that receives an AniPay transfer.
+  // The customer's bank app, simulated: FİN and phone, an SMS code, then the account that receives AniPay transfers.
   if(p.startsWith("anipay-bank/")){
-   var allowed=Map.of("start",Set.of("bankId","fin","phone"),"verify",Set.of("sessionId","code"),"accept",Set.of("sessionId","transferId","accountId"));
+   var allowed=Map.of("start",Set.of("bankId","fin","phone"),"verify",Set.of("sessionId","code"),"register",Set.of("sessionId","accountId"));
    Problem.require(parts.length==2&&allowed.containsKey(parts[1])&&allowed.get(parts[1]).containsAll(b.keySet()),"NOT_FOUND","Səhifə tapılmadı.");
    Map<String,Object> r;
    try{r=sim.call("/anipay/bank/"+parts[1],b);}catch(Problem refused){throw new Problem(422,"BANK_SESSION","Bank sessiyasının vaxtı bitib və ya məlumat yanlışdır. Yenidən başlayın.");}
    if(parts[1].equals("start"))Problem.require(yes(r,"customer"),"NOT_A_CUSTOMER","Bu FİN və nömrə ilə bu bankın müştərisi tapılmadı. Başqa bank seçin.");
    if(parts[1].equals("verify")&&!yes(r,"verified")){Problem.require(num(r,"attemptsLeft")>0,"OTP_LOCKED","Kod 3 dəfə yanlış daxil edildi. Yenidən başlayın.");throw new Problem(422,"OTP_INVALID","Kod yanlışdır. "+r.get("attemptsLeft")+" cəhd qalıb.");}
-   Problem.require(!(parts[1].equals("accept")&&str(r,"status").equals("UNAVAILABLE")),"TRANSFER_UNAVAILABLE","Bu köçürmə artıq qəbul edilib və ya vaxtı bitib.");
    return r;
   }
   // Kampus friends: a static personal QR; whoever scans it becomes a friend, and so does the owner.
@@ -336,30 +341,13 @@ import static az.kampus.Store.*;
  Map<String,Object> compliance(){var result=creditPolicy.report();result.put("reconciliation",l.reconcile());return result;}
  @Scheduled(fixedDelayString="${kampus.ob-sync-ms:300000}",initialDelayString="${kampus.ob-sync-initial-ms:90000}") @Transactional public void syncOpenBanking(){s.lock();openBanking.syncAll(this::notify);}
  @Scheduled(fixedDelayString="${kampus.insights-scan-ms:120000}",initialDelayString="${kampus.insights-scan-initial-ms:60000}") @Transactional public void scanInsights(){s.lock();insights.scan(this::notify);}
- /** An AniPay transfer waits until the recipient accepts it in their bank app; if nobody does it comes back to the sender. */
- void pollAniPay(Map<String,Object> t){
-  if(!str(t,"status").equals("AWAITING_RECIPIENT")||(t.containsKey("nextPollAt")&&num(t,"nextPollAt")>System.currentTimeMillis()))return;
-  t.put("nextPollAt",System.currentTimeMillis()+3000);
-  String sender=str(t,"senderId");long a=num(t,"amountMinor");Map<String,Object> r;
-  try{r=sim.call("/anipay/status",m("transferId",t.get("id")));}catch(Problem e){s.save("TRANSFER",t);return;}
-  String status=str(r,"status");
-  if(status.equals("COMPLETED")){
-   payout("ANIPAY_SETTLEMENT",a);t.put("status","COMPLETED");t.put("receivedTo",str(r,"receivedTo"));s.save("TRANSFER",t);
-   notify(sender,"AniPay köçürməsi qəbul edildi",str(r,"receivedTo"));
-  }else if(status.equals("EXPIRED")){
-   l.post("ANIPAY_REFUND","AniPay köçürməsi geri qaytarıldı","ANIPAY_SETTLEMENT","wallet:"+sender,a);
-   tx(sender,"P2P","AniPay geri qaytarıldı",a,"IN","Daxilolmalar");t.put("status","REFUNDED");s.save("TRANSFER",t);
-   notify(sender,"AniPay köçürməsi geri qaytarıldı","Alıcı vaxtında qəbul etmədi, məbləğ balansınıza qayıtdı.");
-  }else s.save("TRANSFER",t);
- }
  @Scheduled(fixedDelay=400) @Transactional public void processTransfers(){s.lock();for(var t:s.list("TRANSFER",null)){if(str(t,"status").equals("SCHEDULED")&&num(t,"executeAt")<=System.currentTimeMillis()){
    if(isBlacklisted(str(t,"phone"))||isBlacklisted(str(t,"recipientPhone"))){l.release(str(t,"holdId"));returnToCard(t);t.put("status","REJECTED");s.save("TRANSFER",t);notify(str(t,"senderId"),"Köçürmə bloklandı","Alan qara siyahıya əlavə edilib. Rezerv açıldı.");continue;}
    String sender=str(t,"senderId"),to=str(t,"recipientId");long a=num(t,"amountMinor");boolean external=str(t,"channel").equals("ANIPAY");boolean ok=true;
-   if(external){try{sim.call("/anipay/transfers",m("transferId",t.get("id"),"amountMinor",a,"fin",str(t,"phone").matches("[A-Z0-9]{7}")?str(t,"phone"):"","phone",str(t,"phone").matches("[A-Z0-9]{7}")?"":str(t,"phone"),"senderName",s.db.queryForObject("SELECT name FROM users WHERE id=?",String.class,sender)));}catch(Problem e){ok=false;}}
-   l.release(str(t,"holdId"));if(!ok)returnToCard(t);if(ok){l.post("P2P","Köçürmə","wallet:"+sender,external?"ANIPAY_SETTLEMENT":"wallet:"+to,a);String note=str(t,"note").trim();withNote(tx(sender,"P2P",str(t,"recipientName"),a,"OUT","Köçürmələr"),note);if(!external){withNote(tx(to,"P2P",s.db.queryForObject("SELECT name FROM users WHERE id=?",String.class,sender),a,"IN","Daxilolmalar"),note);notify(to,"Pul gəldi",note.isBlank()?"Kampus köçürməsi balansınıza əlavə edildi.":"Qeyd: "+note);}}
-   t.put("status",ok?(external?"AWAITING_RECIPIENT":"COMPLETED"):"REJECTED");s.save("TRANSFER",t);notify(sender,ok?(external?"AniPay köçürməsi göndərildi":"Köçürmə tamamlandı"):"Köçürmə alınmadı",ok?(external?"Alıcı bank proqramında AniPay-dən qəbul etməlidir.":str(t,"recipientName")):"Rezerv edilmiş vəsait açıldı.");
-  }
-  pollAniPay(t);}
+   if(external){try{var paid=sim.call("/anipay/transfers",m("transferId",t.get("id"),"amountMinor",a,"fin",str(t,"phone").matches("[A-Z0-9]{7}")?str(t,"phone"):"","phone",str(t,"phone").matches("[A-Z0-9]{7}")?"":str(t,"phone"),"senderName",s.db.queryForObject("SELECT name FROM users WHERE id=?",String.class,sender)));ok=str(paid,"status").equals("COMPLETED");if(ok)t.put("receivedTo",str(paid,"receivedTo"));}catch(Problem e){ok=false;}}
+   l.release(str(t,"holdId"));if(!ok)returnToCard(t);if(ok){l.post("P2P","Köçürmə","wallet:"+sender,external?"ANIPAY_SETTLEMENT":"wallet:"+to,a);if(external)payout("ANIPAY_SETTLEMENT",a);String note=str(t,"note").trim();withNote(tx(sender,"P2P",str(t,"recipientName"),a,"OUT","Köçürmələr"),note);if(!external){withNote(tx(to,"P2P",s.db.queryForObject("SELECT name FROM users WHERE id=?",String.class,sender),a,"IN","Daxilolmalar"),note);notify(to,"Pul gəldi",note.isBlank()?"Kampus köçürməsi balansınıza əlavə edildi.":"Qeyd: "+note);}}
+   t.put("status",ok?"COMPLETED":"REJECTED");s.save("TRANSFER",t);notify(sender,ok?"Köçürmə tamamlandı":"Köçürmə alınmadı",ok?(external?str(t,"receivedTo"):str(t,"recipientName")):"Rezerv edilmiş vəsait açıldı.");
+  }}
   for(var f:s.list("FRAUD",null))if(str(f,"status").equals("OPEN")&&num(f,"expiresAt")<System.currentTimeMillis()){var t=s.get("TRANSFER",str(f,"transferId"));l.release(str(t,"holdId"));returnToCard(t);t.put("status","REJECTED");s.save("TRANSFER",t);f.put("status","EXPIRED");s.save("FRAUD",f);}
  }
 }

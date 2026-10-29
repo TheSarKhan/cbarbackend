@@ -325,73 +325,62 @@ class Checks(unittest.TestCase):
             self.a.confirmed('card-transfers',{'quoteId':qq['id'],'amountMinor':qq['amountMinor'],'totalMinor':qq['totalMinor'],'recipientName':qq['bankName']+' · •••• '+qq['last4'],'saveAs':'PAŞA'})
         self.assertEqual(len([c for c in self.a.send('recipient-cards') if c['last4']=='4452']),1)
     def anipay_send(self,amount,who='+994551234567'):
-        body=self.a.tbody(who,amount,'AniPay test')
-        t=self.a.confirmed('transfers',body)
+        t=self.a.confirmed('transfers',self.a.tbody(who,amount,'AniPay test'))
         for _ in range(60):
             t=self.a.send('transfers/'+t['id'])
-            if t['status']=='AWAITING_RECIPIENT':return t
+            if t['status'] in ('COMPLETED','REJECTED'):return t
             time.sleep(.3)
-        self.fail('AniPay transfer never reached the recipient bank: '+t['status'])
+        self.fail('AniPay transfer never settled: '+t['status'])
     def bank_start(self,fin,phone):
         for bank in ('KAPITAL','ABB','PASHA','RABITA'):
             r=self.b.send('anipay-bank/start',{'bankId':bank,'fin':fin,'phone':phone},status=(200,422))
             if r.get('sessionId'):return bank,r
         self.fail('no bank knows this customer')
-    def test_40_anipay_waits_for_the_recipient_bank_app(self):
-        self.a.send('transfers/resolve?phone=not-a-recipient',status=404)
-        before=self.a.balance()
-        t=self.anipay_send(1500)
-        self.assertEqual(self.a.balance(),before-1500)
-        self.assertEqual(self.admin.send('admin/reconciliation/run',{})['differenceMinor'],0,'money in transit is still customers money')
-        # in the recipient's bank app: AniPay, FİN and phone, then the SMS code
-        bank,start=self.bank_start('5ABC123','+994 55 123 45 67')
+    def anipay_setup(self,fin,phone,pick=0):
+        """The customer's bank app: FİN and phone, the SMS code, then the account that receives AniPay transfers."""
+        bank,start=self.bank_start(fin,phone)
         self.assertIn('AniPay təsdiq kodu',start['sms']['body'])
         code=re.search(r'(\d{6})',start['sms']['body']).group(1)
-        self.b.send('anipay-bank/accept',{'sessionId':start['sessionId'],'transferId':t['id'],'accountId':'x'},status=422)
-        wrong=self.b.send('anipay-bank/verify',{'sessionId':start['sessionId'],'code':'000000' if code!='000000' else '111111'},status=422)
-        self.assertEqual(wrong['code'],'OTP_INVALID')
+        self.b.send('anipay-bank/register',{'sessionId':start['sessionId'],'accountId':'x'},status=422)
+        self.assertEqual(self.b.send('anipay-bank/verify',{'sessionId':start['sessionId'],'code':'000000' if code!='000000' else '111111'},status=422)['code'],'OTP_INVALID')
         seen=self.b.send('anipay-bank/verify',{'sessionId':start['sessionId'],'code':code})
-        mine=[x for x in seen['transfers'] if x['transferId']==t['id']]
-        self.assertEqual((len(mine),mine[0]['amountMinor']),(1,1500))
-        account=next(x for x in seen['accounts'] if x['type']=='CARD')
-        # a stranger's phone does not find the transfer (it was sent to a phone number)
-        bank2,other=self.bank_start('5ABC123','+994 55 999 99 99')
-        found=self.b.send('anipay-bank/verify',{'sessionId':other['sessionId'],'code':re.search(r'(\d{6})',other['sms']['body']).group(1)})
-        self.assertFalse([x for x in found['transfers'] if x['transferId']==t['id']])
-        self.assertEqual(self.a.send('transfers/'+t['id'])['status'],'AWAITING_RECIPIENT')
-        done=self.b.send('anipay-bank/accept',{'sessionId':start['sessionId'],'transferId':t['id'],'accountId':account['id']})
-        self.assertEqual((done['status'],done['amountMinor']),('COMPLETED',1500))
-        self.b.send('anipay-bank/accept',{'sessionId':start['sessionId'],'transferId':t['id'],'accountId':account['id']},status=422)
-        for _ in range(60):
-            if self.a.send('transfers/'+t['id'])['status']=='COMPLETED':break
-            time.sleep(.3)
-        final=self.a.send('transfers/'+t['id'])
-        self.assertEqual(final['status'],'COMPLETED');self.assertIn('•••',final['receivedTo'])
+        account=seen['accounts'][pick]
+        done=self.b.send('anipay-bank/register',{'sessionId':start['sessionId'],'accountId':account['id']})
+        self.assertTrue(done['registered']);self.assertIn(account['masked'],done['accountLabel'])
+        return done['accountLabel']
+    def test_40_anipay_lands_on_the_account_chosen_in_the_bank_app(self):
+        # nobody has set AniPay up for this phone or FİN yet
+        self.a.send('transfers/resolve?phone=%2B994551234567',status=404)
+        self.a.send('transfers/resolve?phone=5ABC123',status=404)
+        label=self.anipay_setup('5ABC123','+994 55 123 45 67')
+        recipient=self.a.send('transfers/resolve?phone=%2B994551234567')
+        self.assertEqual(recipient['channel'],'ANIPAY');self.assertNotIn('Digər bank',recipient['maskedName'])
+        self.assertEqual(self.a.send('transfers/resolve?phone=5ABC123')['channel'],'ANIPAY','the FİN works too')
+        before=self.a.balance()
+        t=self.anipay_send(1500)
+        self.assertEqual(t['status'],'COMPLETED');self.assertEqual(t['receivedTo'],label)
         self.assertEqual(self.a.balance(),before-1500)
+        by_fin=self.anipay_send(500,'5ABC123')
+        self.assertEqual((by_fin['status'],by_fin['receivedTo']),('COMPLETED',label))
         self.assertEqual(self.admin.send('admin/reconciliation/run',{})['differenceMinor'],0)
+        # choosing another account in the bank app redirects the next transfer
+        again=self.anipay_setup('5ABC123','+994 55 123 45 67',pick=2)
+        self.assertNotEqual(again,label)
+        self.assertEqual(self.anipay_send(300)['receivedTo'],again)
+        self.assertEqual(self.a.balance(),before-2300)
     def test_40b_three_wrong_codes_end_the_bank_session(self):
         bank,start=self.bank_start('3LOCK12','+994 55 000 11 22')
-        for left in (2,1):
+        for _ in (2,1):
             self.assertEqual(self.b.send('anipay-bank/verify',{'sessionId':start['sessionId'],'code':'abcdef'},status=422)['code'],'OTP_INVALID')
         self.assertEqual(self.b.send('anipay-bank/verify',{'sessionId':start['sessionId'],'code':'abcdef'},status=422)['code'],'OTP_LOCKED')
         self.b.send('anipay-bank/verify',{'sessionId':start['sessionId'],'code':'123456'},status=422)
         self.b.send('anipay-bank/start',{'bankId':'KAPITAL','fin':'bad','phone':'1'},status=422)
-    def test_41_unclaimed_anipay_comes_back(self):
+    def test_41_an_unregistered_recipient_cannot_be_paid(self):
         before=self.a.balance()
-        t=self.anipay_send(900,'9XYZ999')
-        self.assertEqual(self.a.balance(),before-900)
-        # addressed by FİN, the transfer is found by the FİN whatever phone the recipient types
-        bank,start=self.bank_start('9XYZ999','+994 70 111 22 33')
-        seen=self.b.send('anipay-bank/verify',{'sessionId':start['sessionId'],'code':re.search(r'(\d{6})',start['sms']['body']).group(1)})
-        self.assertTrue([x for x in seen['transfers'] if x['transferId']==t['id']])
-        req=urllib.request.Request(SIM_BASE+'/anipay/demo-expire',data=json.dumps({'transferId':t['id']}).encode(),headers={'Content-Type':'application/json','X-Api-Key':'kampus-local-simulator-key'})
-        with urllib.request.urlopen(req) as r:self.assertEqual(json.load(r)['status'],'EXPIRED')
-        for _ in range(60):
-            if self.a.send('transfers/'+t['id'])['status']=='REFUNDED':break
-            time.sleep(.3)
-        self.assertEqual(self.a.send('transfers/'+t['id'])['status'],'REFUNDED')
+        self.a.send('transfers/resolve?phone=9XYZ999',status=404)
+        self.a.send('transfers/resolve?phone=%2B994709876543',status=404)
+        self.a.send('transfers',{'phone':'9XYZ999','amountMinor':900,'recipientToken':'none'},status=(404,422,400))
         self.assertEqual(self.a.balance(),before)
-        self.assertEqual(self.admin.send('admin/reconciliation/run',{})['differenceMinor'],0)
     def test_42_friends_by_qr(self):
         qr=self.a.send('friends/qr',{})
         self.assertTrue(qr['qrPayload'].startswith('kampus-friend:'))
