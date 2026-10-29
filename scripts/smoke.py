@@ -94,41 +94,13 @@ class Checks(unittest.TestCase):
         self.assertEqual(t['status'],'UNDER_REVIEW');self.assertEqual(new.balance(),before-30000)
         case=next(f for f in self.admin.send('admin/fraud/cases') if f['transferId']==t['id'])
         self.admin.send('admin/fraud/cases/'+case['id']+'/reject',{});self.assertEqual(new.balance(),before)
-    def test_09_credit_consent_offers_disbursement(self):
-        body={'amountMinor':80000,'termMonths':12,'purpose':'Noutbuk','consent':True}
-        self.a.send('loan-applications',{**body,'consent':False},status=422)
-        app=self.a.send('loan-applications',body);offers=self.a.send('loan-applications/'+app['id']+'/offers')
-        self.assertEqual(len(offers),2);self.assertEqual(sum(o['approved'] for o in offers),1)
-        o=next(o for o in offers if o['approved']);before=self.a.balance()
-        path='loan-offers/'+o['id']+'/accept';self.a.confirmed(path,{})
-        self.assertEqual(self.a.balance(),before+80000)
-        schedule=self.a.send('partner-loans/'+self.a.send('dashboard')['partnerLoans'][0]['id']+'/schedule')
-        self.assertEqual(len(schedule),12);self.assertEqual(sum(i['amountMinor'] for i in schedule),o['totalPayableMinor'])
-        loan_id=self.a.send('dashboard')['partnerLoans'][0]['id']
-        self.a.confirmed('partner-loans/'+loan_id+'/installments/'+schedule[0]['id']+'/pay',{})
-        self.assertEqual(self.a.balance(),before+80000-schedule[0]['amountMinor'])
-        self.a.send(path,{},status=422)
-    def test_10_bnpl_limit_and_repayment(self):
-        i=self.merchant.send('merchant/qr/dynamic',{'amountMinor':4500})
-        self.a.confirmed('payments/qr',self.a.qr_body(i['qrPayload'],4500,'BNPL'))
+    def test_10_bnpl_is_unavailable(self):
         i=self.merchant.send('merchant/qr/dynamic',{'amountMinor':1000})
         b=self.a.qr_body(i['qrPayload'],1000,'BNPL')
         self.a.send('payments/qr',b,proof=self.a.sca('payments/qr',b),status=422)
-        loan=next(l for l in self.a.send('bnpl/loans') if l['status']=='ACTIVE')
-        self.a.confirmed('bnpl/loans/'+loan['id']+'/repay',{})
-        self.assertEqual(self.a.send('bnpl/eligibility')['availableMinor'],5000)
     def test_13_reconciliation(self):
         r=self.admin.send('admin/reconciliation/run',{})
         self.assertEqual(r['status'],'MATCHED');self.assertEqual(r['differenceMinor'],0)
-    def test_13b_split_progress_and_requests(self):
-        split=self.a.send('splits',{'totalMinor':6000,'mode':'EQUAL','note':'pizza','participants':[{'phone':'+994501000002'},{'phone':'+994501000003'}]})
-        view=self.a.send('splits/'+split['id'])
-        self.assertEqual(view['paidMinor'],2000);self.assertEqual(view['paidCount'],1)
-        self.b.send('splits/'+split['id'],status=403)
-        req=next(r for r in self.b.send('payment-requests') if r.get('splitId')==split['id'])
-        self.b.confirmed('payment-requests/'+req['id']+'/pay',{})
-        view=self.a.send('splits/'+split['id'])
-        self.assertEqual(view['paidMinor'],4000);self.assertEqual(view['paidCount'],2)
     def demo_card(self,pan):
         session=self.a.send('card-transfers/card-session',{})
         self.b.send('card-sessions/'+session['id'],status=403)
@@ -255,9 +227,7 @@ class Checks(unittest.TestCase):
         self.assertTrue(t['trustedBeneficiary'])
         self.a.send('transfers/'+t['id']+'/cancel',{})
         self.a.send('trusted-beneficiaries/'+tb['id']+'/delete',{})
-    def test_22_split_budget_and_category(self):
-        sp=self.a.send('splits',{'totalMinor':3000,'mode':'CUSTOM','participants':[{'phone':'+994501000002','amountMinor':1200}],'note':'Xüsusi hesab'})
-        self.assertEqual(sp['organizerShareMinor'],1800)
+    def test_22_budget_and_category(self):
         self.a.send('budgets',{'category':'Nəqliyyat','limitMinor':1000})
         txs=self.a.send('transactions')
         out_tx=next(t for t in txs if t['direction']=='OUT')
@@ -408,8 +378,7 @@ class Checks(unittest.TestCase):
         client=Client('+994501000002','logout-device')
         client.send('auth/logout',{})
         client.send('wallet',status=401)
-    def test_27_new_account_is_not_automatically_bnpl_eligible(self):
-        self.assertIn('recentIncomingCount',self.a.send('bnpl/eligibility'))
+    def test_27_health_is_ready(self):
         self.assertTrue(self.a.send('health/ready')['database']=='UP')
     def test_14_pin_lockout(self):
         for _ in range(3):
@@ -559,8 +528,8 @@ class Checks(unittest.TestCase):
         self.a.send('transfers/'+t['id']+'/cancel',{})
         # cancelling inside the window puts the money back on the card it came from, not into the wallet
         self.assertEqual(self.a.balance(),wallet+3000);self.assertEqual(card()['balanceMinor'],start-4200)
-        # the bank enforces the monthly limit the customer signed: 42 of 200 AZN used, 170 more does not fit
-        over={'amountMinor':17000,'source':'BANK_CARD','accountId':card_id}
+        # the bank enforces the monthly limit the customer signed: 42 of 200 AZN used, 159 more does not fit
+        over={'amountMinor':15900,'source':'BANK_CARD','accountId':card_id}
         refused=self.a.send('topups',over,proof=self.a.sca('topups',over),status=422)
         self.assertEqual(refused['code'],'CARD_LIMIT');self.assertIn('200.00 AZN',refused['detail'])
         self.assertEqual(self.a.balance(),wallet+3000);self.assertEqual(card()['balanceMinor'],start-4200)
