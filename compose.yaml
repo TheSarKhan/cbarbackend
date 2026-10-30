@@ -51,6 +51,7 @@ services:
    DEPLOYED: 'true'
    DEMO_PIN: ${DEMO_PIN:?Run scripts/deploy-init.py first}
    ADMIN_PIN: ${ADMIN_PIN:?Run scripts/deploy-init.py first}
+   KAMPUS_WELCOME_CREDIT_MINOR: ${KAMPUS_WELCOME_CREDIT_MINOR:-100000}
    CORS_ORIGINS: ${CORS_ORIGINS:?Run scripts/deploy-init.py first}
   depends_on:
    db: {condition: service_healthy}

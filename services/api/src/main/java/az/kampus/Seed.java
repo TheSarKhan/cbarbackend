@@ -10,7 +10,7 @@ import static az.kampus.Store.*;
  @org.springframework.beans.factory.annotation.Value("${kampus.admin-pin}") String adminPin;
  final Store s;final Ledger l;final Auth a;final Tokens tokens;
  Seed(Store s,Ledger l,Auth a,Tokens tokens){this.s=s;this.l=l;this.a=a;this.tokens=tokens;}
- @Override @Transactional public void run(ApplicationArguments args){base();demoIdentityGaps();history();}
+ @Override @Transactional public void run(ApplicationArguments args){base();demoIdentityGaps();history();a.welcomeBackfill();}
 
  /** Backfill only the four known demo accounts created before identity fields existed. Never invent a real person's identity. */
  void demoIdentityGaps(){

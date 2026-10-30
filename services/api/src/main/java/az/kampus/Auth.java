@@ -23,6 +23,24 @@ import static az.kampus.Store.*;
  boolean needsKyc(Object payload){return payloadAmount(payload)>=kycStepUpMinor;}
  /** Other beans call this through Spring's proxy, so read the limit with a method: a field read on the proxy would see 0. */
  long kycLimit(){return kycStepUpMinor;}
+ /** Demo promotion switched on by KAMPUS_WELCOME_CREDIT_MINOR (0 = off): each student account gets the welcome balance exactly once. */
+ @org.springframework.beans.factory.annotation.Value("${kampus.welcome-credit-minor:0}") long welcomeCreditMinor;
+ void welcomeCredit(String uid){
+  if(welcomeCreditMinor<=0)return;
+  String marker="welcome."+uid;
+  if(s.db.queryForObject("SELECT COUNT(*) FROM records WHERE kind='SETTING' AND id=?",Long.class,marker)>0)return;
+  l.post("TOPUP","Xoş gəldin balansı","CUSTOMER_FUNDS_BANK","wallet:"+uid,welcomeCreditMinor);
+  s.add("TX",uid,m("type","TOPUP","name","Xoş gəldin balansı","amountMinor",welcomeCreditMinor,"direction","IN","status","COMPLETED","category","Daxilolmalar"));
+  s.add("NOTIFICATION",uid,m("title","Xoş gəldin balansı","body",String.format(Locale.ROOT,"Hesabına %.2f AZN əlavə olundu.",welcomeCreditMinor/100.0),"read",false));
+  s.add("SETTING","SYSTEM",m("id",marker,"value",true));
+  s.audit(uid,"WELCOME_CREDIT",m("amountMinor",welcomeCreditMinor));
+ }
+ /** Accounts that existed before the promotion was switched on get it at start-up. */
+ void welcomeBackfill(){
+  if(welcomeCreditMinor<=0)return;
+  s.lock();
+  for(String uid:s.db.queryForList("SELECT id FROM users WHERE role='USER'",String.class))welcomeCredit(uid);
+ }
  static String sha256(String v){try{var md=java.security.MessageDigest.getInstance("SHA-256");return java.util.HexFormat.of().formatHex(md.digest(v.getBytes(java.nio.charset.StandardCharsets.UTF_8)));}catch(Exception e){throw new RuntimeException(e);}}
  record User(String id,String name,String phone,String role,String device,int pinLength){User(String id,String name,String phone,String role,String device){this(id,name,phone,role,device,6);}}
  Map<String,Object> publicUser(User u){var kyc=s.list("KYC",u.id).stream().findFirst().orElse(null);return m("id",u.id,"name",u.name,"phone",u.phone,"role",u.role,"pinLength",u.pinLength,"avatar",avatarOf(u.id),"finMasked",kyc==null?null:str(kyc,"finMasked"),"idSeriesMasked",kyc==null?null:str(kyc,"idSeriesMasked"));}
@@ -114,7 +132,7 @@ import static az.kampus.Store.*;
   Problem.require(!birth.isAfter(LocalDate.now().minusYears(18)),"AGE_RESTRICTED","Hesab yalnız 18 yaşdan yuxarı şəxslər üçündür.");
   Problem.require(s.db.queryForObject("SELECT COUNT(*) FROM users WHERE phone=?",Long.class,phone)==0,"PHONE_EXISTS","Bu nömrə artıq qeydiyyatdan keçib.");
   var sima=sim.call("/sima/sign",m("phone",phone,"name",name));
-  String user=id();s.db.update("INSERT INTO users(id,phone,name,pin_hash,role,device_id,birth_date,created_at,pin_length,avatar) VALUES(?,?,?,?,?,?,?,?,4,?)",user,phone,name,hash.encode(pin),"USER",device,birth.toString(),now(),avatar);l.account("wallet:"+user,"C");o.put("used",true);s.save("OTP",o);
+  String user=id();s.db.update("INSERT INTO users(id,phone,name,pin_hash,role,device_id,birth_date,created_at,pin_length,avatar) VALUES(?,?,?,?,?,?,?,?,4,?)",user,phone,name,hash.encode(pin),"USER",device,birth.toString(),now(),avatar);l.account("wallet:"+user,"C");welcomeCredit(user);o.put("used",true);s.save("OTP",o);
   s.add("CONSENT",user,m("type","TERMS_AND_DATA","version","1","acceptedAt",now()));
   String mediaId=media.store(user,"SELFIE","image/jpeg",selfie);
   s.add("KYC",user,tokens.protectedRecord(m("userId",user,"userName",name,"firstName",first,"lastName",last,"phone",phone,"fin",fin,"idSeries",series,"status","DEMO_VERIFIED","provider","MOCK_REGISTRY_SIMA","liveness","CLIENT_REPORTED","livenessProvider",mode,"livenessActions",done,"faceMatchScore",faceScore,"contractId",sima.get("contractId"),"signatureHash",sima.get("signatureHash"),"mediaStored",true,"selfieMediaId",mediaId,"selfieSha256",KycMedia.sha256(selfie),"birthDate",birth.toString())));
